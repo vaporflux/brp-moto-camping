@@ -66,3 +66,55 @@ the repo does know (29 published fuel exits + 4 closure detour roads), tags each
 provenance, and measures the blind spots: the longest run with no known junction is
 31.3 mi. The exporter must treat spacing as the fallback that carries those stretches,
 not as belt-and-braces on top of complete data. See `spacing_requirement()`.
+
+## GPX export
+
+`gpxval.py` was written before `gpx.py` and runs over its output, because SPEC.md §8's
+"enforced not just warned" is only true if something fails. Every check maps to a line in
+`GPX-REFERENCE.md`'s checklist or its "Do NOT emit" list, and `test_gpx.py` mutates a
+clean file eight ways to prove the validator rejects each one.
+
+Scope limit: full XSD conformance needs the Topografix and Garmin schema files, fetched
+over the network. This validates structure, namespaces, element placement, budgets,
+naming and geography — everything the checklist names except literal schema validation.
+
+### Point placement
+
+The spec's flat "one shaping point every ~5 miles" is not what this implements, because
+the spec's own reasoning defeats it. Garmin guarantees the route passes through every
+shaping and via point, so the device cannot drift — it can only cut a corner by leaving
+the Parkway and rejoining **between two consecutive route points**, which needs two
+junctions inside the same interval. A 45 mph Parkway loses the time race against a
+parallel US highway often enough that this is the realistic failure.
+
+So the budget goes to known junctions first (a point 0.25 mi past a junction makes that
+exit geometrically impossible), then fills to spacing. Where junctions are unknown,
+spacing `S` **bounds** the bypass at `S` miles — a bound, not a guarantee, and each day
+reports its own `max_unprotected_span_mi` so the number is visible rather than implied.
+
+Two placement rules the data cannot currently support, declared rather than faked:
+
+- **Bridges and overpasses.** SPEC §5.5 says never place a point on one. Nothing in
+  `data/` identifies bridges, so this is unenforced. Three are known indirectly from
+  closure reasons (Linn Cove, Deep Gap, MP 63.5) and those ranges are excluded anyway.
+- **Complete junction coverage.** 33 known crossings, 1 per 14.2 mi, longest blind spot
+  31.3 mi. See the junction section above.
+
+### Divergence from SPEC §5.7
+
+The prose says to set `trp:CalculationMode` alongside `trp:TransportationMode` at route
+level. TripExtensions v1 puts `CalculationMode` inside each `trp:ViaPoint`, which is what
+`GPX-REFERENCE.md`'s worked example does. The reference is right; the exporter follows it
+and a test pins the placement.
+
+### Two coordinate systems, deliberately separate
+
+`mp` is the Parkway **access milepost** — it drives centerline slicing and shaping-point
+placement. `lat`/`lon` is **where the rider is going**: the campground, or the pump. A
+fuel via point at the Parkway anchor announces "arriving" beside an exit and puts no
+gasoline in the tank.
+
+Keeping them apart is also what lets a via point legitimately sit inside a closed
+milepost range: MP 63.7's station is six miles off a Parkway shut for 0.4 mi, reached on
+the signed detour. The validator applies the closure test only to points within 0.25 mi
+of the centerline for exactly this reason.

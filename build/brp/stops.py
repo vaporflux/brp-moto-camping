@@ -211,3 +211,48 @@ def fuel_gaps(fuel, net, component=None, max_detour_mi=None):
                 "to_is_edge": b.get("edge", False),
             })
     return sorted(gaps, key=lambda g: -g["gap_mi"])
+
+
+def as_route_stop(rec, kind=None, name=None, use_station=True):
+    """Turn a campground or fuel record into a stop the router and exporter can use.
+
+    The two coordinate systems here are deliberately different, and conflating them is a
+    bug that only shows up on the road:
+
+      `mp`      is the Parkway ACCESS milepost. It drives centerline slicing and
+                shaping-point placement -- everything that happens on the road.
+      lat/lon   is where the rider is actually going. For a campground that is the
+                campground; for fuel it is the pump, because navigating to a point on
+                the Parkway beside the exit does not put gasoline in the tank.
+
+    Keeping them separate is also what lets a via point sit inside a closed milepost
+    range legitimately: MP 63.7's station is six miles off a Parkway that is shut for
+    0.4 mi, and the rider reaches it on the signed detour.
+    """
+    kind = kind or ("fuel" if rec.get("kind") == "fuel" else "campground")
+    if rec.get("kind") == "fuel":
+        lat, lon = rec["parkway_lat"], rec["parkway_lon"]
+        detour = 0.0
+        if use_station and rec.get("stations"):
+            located = [s for s in rec["stations"]
+                       if s.get("lat") is not None and s.get("lon") is not None]
+            if located:
+                best = min(located,
+                           key=lambda s: geo.haversine((lat, lon), (s["lat"], s["lon"])))
+                lat, lon = best["lat"], best["lon"]
+                detour = rec.get("detour_plan_mi") or 0.0
+        label = name or f"FUEL {rec.get('exit_road', '')}".strip()
+        comment = f"MP {rec['mp']} - {rec.get('town', '')}"
+        if rec.get("warning"):
+            comment += f" - {rec['warning']}"
+        elif rec.get("closure_note"):
+            comment += f" - {rec['closure_note']}"
+        return {"mp": rec["mp"], "lat": lat, "lon": lon, "kind": kind,
+                "name": label, "comment": comment[:200],
+                "off_parkway_mi": detour, "plan_grade": rec.get("plan_grade")}
+
+    return {"mp": rec["mp"], "lat": rec["lat"], "lon": rec["lon"], "kind": kind,
+            "name": name or rec["name"],
+            "comment": f"MP {rec['mp']} - {rec.get('price', '')}".strip(" -"),
+            "off_parkway_mi": rec.get("off_parkway_mi", 0.0),
+            "reachable_from_parkway": rec.get("reachable_from_parkway", True)}
