@@ -1,0 +1,85 @@
+{
+ "source": "https://www.nps.gov/blri/planyourvisit/roadclosures.htm",
+ "as_of": "2026-08-16",
+ "closures": [
+  {
+   "from_mp": 63.5,
+   "to_mp": 63.9,
+   "state": "VA",
+   "reason": "Bridge rehabilitation",
+   "detour": "Signed, MP 61.4-64"
+  },
+  {
+   "from_mp": 112.4,
+   "to_mp": 115.0,
+   "state": "VA",
+   "reason": "Partial closure",
+   "detour": "MP 115-121.4 open via US 220"
+  },
+  {
+   "from_mp": 120.3,
+   "to_mp": 120.4,
+   "state": "VA",
+   "reason": "Roanoke Mountain Loop closed until further notice",
+   "detour": null
+  },
+  {
+   "from_mp": 274.3,
+   "to_mp": 276.5,
+   "state": "NC",
+   "reason": "Deep Gap Bridge repairs",
+   "detour": "Signed, MP 269.8-276.5 via US 221/US 421"
+  },
+  {
+   "from_mp": 304.4,
+   "to_mp": 305.1,
+   "state": "NC",
+   "reason": "Great American Outdoors Act project (Linn Cove)",
+   "detour": "Signed; Linn Cove Visitor Center closed"
+  },
+  {
+   "from_mp": 317.5,
+   "to_mp": 324.7,
+   "state": "NC",
+   "reason": "Hurricane Helene",
+   "detour": null,
+   "recreation_prohibited": true
+  },
+  {
+   "from_mp": 324.7,
+   "to_mp": 327.5,
+   "state": "NC",
+   "reason": "Hurricane Helene",
+   "detour": null,
+   "recreation_prohibited": true
+  },
+  {
+   "from_mp": 333.9,
+   "to_mp": 342.1,
+   "state": "NC",
+   "reason": "Hurricane Helene",
+   "detour": null,
+   "all_access_prohibited": true
+  },
+  {
+   "from_mp": 342.1,
+   "to_mp": 344.2,
+   "state": "NC",
+   "reason": "Hurricane Helene",
+   "detour": null,
+   "recreation_prohibited": true
+  },
+  {
+   "from_mp": 344.2,
+   "to_mp": 355.3,
+   "state": "NC",
+   "reason": "Hurricane Helene",
+   "detour": null,
+   "recreation_prohibited": true
+  }
+ ],
+ "notes": [
+  "MP 327.5-333.9 is an orphaned open segment reachable only from NC 226.",
+  "Practical effect: the Parkway between Linville Falls (317.5) and Asheville (382.5) is not rideable in 2026."
+ ]
+}

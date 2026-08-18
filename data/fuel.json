@@ -1,0 +1,789 @@
+[
+ {
+  "mp": 0,
+  "state": "VA",
+  "exit_road": "US 250",
+  "direction": "west",
+  "published_distance": "<3 mi",
+  "town": "Waynesboro",
+  "parkway_lat": 38.03155,
+  "parkway_lon": -78.85836,
+  "stations": [
+   {
+    "name": "Sunoco",
+    "brand": "Sunoco",
+    "hours": "",
+    "lat": 38.06447,
+    "lon": -78.87331,
+    "mi_straight": 2.4
+   },
+   {
+    "name": "Arco",
+    "brand": "Arco",
+    "hours": "",
+    "lat": 38.0651,
+    "lon": -78.87498,
+    "mi_straight": 2.5
+   },
+   {
+    "name": "Speedway",
+    "brand": "Speedway",
+    "hours": "24/7",
+    "lat": 38.06624,
+    "lon": -78.87738,
+    "mi_straight": 2.6
+   }
+  ],
+  "osm_fuel_within_9mi": 17,
+  "confidence": "verified"
+ },
+ {
+  "mp": 27.2,
+  "state": "VA",
+  "exit_road": "VA 56",
+  "direction": "east",
+  "published_distance": "3 mi",
+  "town": "Vesuvius / Steeles Tavern",
+  "parkway_lat": 37.88602,
+  "parkway_lon": -79.15172,
+  "stations": [
+   {
+    "name": "BP",
+    "brand": "BP",
+    "hours": "",
+    "lat": 37.93041,
+    "lon": -79.22617,
+    "mi_straight": 5.1
+   },
+   {
+    "name": "Valero",
+    "brand": "Valero",
+    "hours": "",
+    "lat": 37.93115,
+    "lon": -79.22572,
+    "mi_straight": 5.1
+   },
+   {
+    "name": "Petro Dealer",
+    "brand": "Petro",
+    "hours": "",
+    "lat": 37.9296,
+    "lon": -79.22888,
+    "mi_straight": 5.2
+   }
+  ],
+  "osm_fuel_within_9mi": 10,
+  "confidence": "verified"
+ },
+ {
+  "mp": 45.6,
+  "state": "VA",
+  "exit_road": "US 60",
+  "direction": "west",
+  "published_distance": "<5 mi",
+  "town": "Buena Vista",
+  "parkway_lat": 37.73936,
+  "parkway_lon": -79.30382,
+  "stations": [
+   {
+    "name": "BP",
+    "brand": "BP",
+    "hours": "",
+    "lat": 37.74368,
+    "lon": -79.34871,
+    "mi_straight": 2.5
+   },
+   {
+    "name": "Exxon",
+    "brand": "Exxon",
+    "hours": "",
+    "lat": 37.74143,
+    "lon": -79.35846,
+    "mi_straight": 3.0
+   },
+   {
+    "name": "Exxon",
+    "brand": "Exxon",
+    "hours": "",
+    "lat": 37.75829,
+    "lon": -79.41788,
+    "mi_straight": 6.4
+   }
+  ],
+  "osm_fuel_within_9mi": 11,
+  "confidence": "verified"
+ },
+ {
+  "mp": 63.7,
+  "state": "VA",
+  "exit_road": "US 501",
+  "direction": "south",
+  "published_distance": "<1 mi",
+  "town": "Big Island",
+  "parkway_lat": 37.55481,
+  "parkway_lon": -79.3701,
+  "stations": [
+   {
+    "name": "Petro Power",
+    "brand": "Petro",
+    "hours": "",
+    "lat": 37.63111,
+    "lon": -79.44789,
+    "mi_straight": 6.8
+   },
+   {
+    "name": "Spirit",
+    "brand": "",
+    "hours": "",
+    "lat": 37.62283,
+    "lon": -79.49525,
+    "mi_straight": 8.3
+   }
+  ],
+  "osm_fuel_within_9mi": 2,
+  "confidence": "verified"
+ },
+ {
+  "mp": 90.9,
+  "state": "VA",
+  "exit_road": "VA 43",
+  "direction": "north",
+  "published_distance": "<5 mi",
+  "town": "Buchanan / Bedford",
+  "parkway_lat": 37.48145,
+  "parkway_lon": -79.67755,
+  "stations": [
+   {
+    "name": "Exxon",
+    "brand": "Exxon",
+    "hours": "",
+    "lat": 37.45557,
+    "lon": -79.83736,
+    "mi_straight": 8.9
+   }
+  ],
+  "osm_fuel_within_9mi": 2,
+  "confidence": "verified"
+ },
+ {
+  "mp": 106.0,
+  "state": "VA",
+  "exit_road": "US 460",
+  "direction": "west <4 / east <2",
+  "published_distance": "<4 mi",
+  "town": "Roanoke / Bedford",
+  "parkway_lat": 37.35093,
+  "parkway_lon": -79.8373,
+  "stations": [
+   {
+    "name": "Kroger",
+    "brand": "Kroger",
+    "hours": "",
+    "lat": 37.31276,
+    "lon": -79.88174,
+    "mi_straight": 3.6
+   },
+   {
+    "name": "bp",
+    "brand": "BP",
+    "hours": "",
+    "lat": 37.39293,
+    "lon": -79.9065,
+    "mi_straight": 4.8
+   },
+   {
+    "name": "GB",
+    "brand": "",
+    "hours": "",
+    "lat": 37.39334,
+    "lon": -79.90599,
+    "mi_straight": 4.8
+   }
+  ],
+  "osm_fuel_within_9mi": 39,
+  "confidence": "verified"
+ },
+ {
+  "mp": 112.2,
+  "state": "VA",
+  "exit_road": "VA 24",
+  "direction": "east or west",
+  "published_distance": "<3 mi",
+  "town": "Vinton",
+  "parkway_lat": 37.28484,
+  "parkway_lon": -79.85215,
+  "stations": [
+   {
+    "name": "Country Crossing Fuel",
+    "brand": "Shell",
+    "hours": "",
+    "lat": 37.27801,
+    "lon": -79.87084,
+    "mi_straight": 1.1
+   },
+   {
+    "name": "Kroger",
+    "brand": "Kroger",
+    "hours": "",
+    "lat": 37.27283,
+    "lon": -79.8875,
+    "mi_straight": 2.1
+   },
+   {
+    "name": "Kroger",
+    "brand": "Kroger",
+    "hours": "",
+    "lat": 37.31276,
+    "lon": -79.88174,
+    "mi_straight": 2.5
+   }
+  ],
+  "osm_fuel_within_9mi": 52,
+  "confidence": "verified"
+ },
+ {
+  "mp": 121.4,
+  "state": "VA",
+  "exit_road": "US 220",
+  "direction": "north or south",
+  "published_distance": "<2 mi",
+  "town": "Roanoke",
+  "parkway_lat": 37.21063,
+  "parkway_lon": -79.9553,
+  "stations": [
+   {
+    "name": "Shell",
+    "brand": "Shell",
+    "hours": "",
+    "lat": 37.22526,
+    "lon": -79.98124,
+    "mi_straight": 1.7
+   },
+   {
+    "name": "Exxon Fuel",
+    "brand": "Exxon",
+    "hours": "",
+    "lat": 37.22487,
+    "lon": -79.98296,
+    "mi_straight": 1.8
+   },
+   {
+    "name": "Shell",
+    "brand": "Shell",
+    "hours": "",
+    "lat": 37.23473,
+    "lon": -79.97027,
+    "mi_straight": 1.9
+   }
+  ],
+  "osm_fuel_within_9mi": 49,
+  "confidence": "verified"
+ },
+ {
+  "mp": 135.9,
+  "state": "VA",
+  "exit_road": "US 221",
+  "direction": "south",
+  "published_distance": "<5 mi",
+  "town": "Adney Gap",
+  "parkway_lat": 37.1287,
+  "parkway_lon": -80.1221,
+  "stations": [
+   {
+    "name": "Citgo",
+    "brand": "Citgo",
+    "hours": "",
+    "lat": 37.24647,
+    "lon": -80.17568,
+    "mi_straight": 8.7
+   }
+  ],
+  "osm_fuel_within_9mi": 1,
+  "confidence": "verified"
+ },
+ {
+  "mp": 165.3,
+  "state": "VA",
+  "exit_road": "VA 8 / US 221",
+  "direction": "north",
+  "published_distance": "<7 mi",
+  "town": "Floyd",
+  "parkway_lat": 36.84353,
+  "parkway_lon": -80.31073,
+  "stations": [
+   {
+    "name": "West End Market",
+    "brand": "",
+    "hours": "",
+    "lat": 36.90837,
+    "lon": -80.33113,
+    "mi_straight": 4.6
+   },
+   {
+    "name": "Exxon",
+    "brand": "Exxon",
+    "hours": "",
+    "lat": 36.91161,
+    "lon": -80.3161,
+    "mi_straight": 4.7
+   }
+  ],
+  "osm_fuel_within_9mi": 4,
+  "confidence": "verified"
+ },
+ {
+  "mp": 177.7,
+  "state": "VA",
+  "exit_road": "US 58",
+  "direction": "east",
+  "published_distance": "<1 mi",
+  "town": "Meadows of Dan",
+  "parkway_lat": 36.74191,
+  "parkway_lon": -80.41002,
+  "stations": [
+   {
+    "name": "Marathon",
+    "brand": "Marathon",
+    "hours": "",
+    "lat": 36.73516,
+    "lon": -80.40775,
+    "mi_straight": 0.5
+   },
+   {
+    "name": "Meadows of Dan Food Market",
+    "brand": "",
+    "hours": "",
+    "lat": 36.73541,
+    "lon": -80.40777,
+    "mi_straight": 0.5
+   },
+   {
+    "name": "Citgo",
+    "brand": "Citgo",
+    "hours": "",
+    "lat": 36.71639,
+    "lon": -80.53437,
+    "mi_straight": 7.1
+   }
+  ],
+  "osm_fuel_within_9mi": 5,
+  "confidence": "verified"
+ },
+ {
+  "mp": 199.4,
+  "state": "VA",
+  "exit_road": "US 52",
+  "direction": "north",
+  "published_distance": "<1 mi",
+  "town": "Fancy Gap",
+  "parkway_lat": 36.67093,
+  "parkway_lon": -80.67422,
+  "stations": [
+   {
+    "name": "Amoco",
+    "brand": "Amoco",
+    "hours": "",
+    "lat": 36.66787,
+    "lon": -80.69234,
+    "mi_straight": 1.0
+   },
+   {
+    "name": "BP",
+    "brand": "BP",
+    "hours": "Mo-Sa 05:00-23:00; Su 06:00-23:00",
+    "lat": 36.67333,
+    "lon": -80.71315,
+    "mi_straight": 2.2
+   },
+   {
+    "name": "Sunoco",
+    "brand": "Sunoco",
+    "hours": "",
+    "lat": 36.58524,
+    "lon": -80.66362,
+    "mi_straight": 5.9
+   }
+  ],
+  "osm_fuel_within_9mi": 14,
+  "confidence": "verified"
+ },
+ {
+  "mp": 215.8,
+  "state": "VA",
+  "exit_road": "VA 89",
+  "direction": "north",
+  "published_distance": "<6 mi",
+  "town": "Galax",
+  "parkway_lat": 36.56878,
+  "parkway_lon": -80.88034,
+  "stations": [
+   {
+    "name": "Exxon",
+    "brand": "Exxon",
+    "hours": "",
+    "lat": 36.6508,
+    "lon": -80.91909,
+    "mi_straight": 6.1
+   },
+   {
+    "name": "Marathon",
+    "brand": "Marathon",
+    "hours": "",
+    "lat": 36.65233,
+    "lon": -80.91913,
+    "mi_straight": 6.2
+   },
+   {
+    "name": "Citgo",
+    "brand": "Citgo",
+    "hours": "",
+    "lat": 36.66065,
+    "lon": -80.92479,
+    "mi_straight": 6.8
+   }
+  ],
+  "osm_fuel_within_9mi": 12,
+  "confidence": "verified"
+ },
+ {
+  "mp": 229.7,
+  "exit_road": "US 21, Roaring Gap / Sparta",
+  "direction": "north or south",
+  "published_distance": "<4 mi (Sparta 8 mi N)",
+  "town": "Roaring Gap / Sparta",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Speedway",
+    "lat": 36.50824,
+    "lon": -81.12489,
+    "note": "306 N Main St, Sparta"
+   },
+   {
+    "name": "Foley's One Stop",
+    "lat": 36.47054,
+    "lon": -81.05808,
+    "note": "US 21, Glade Valley"
+   },
+   {
+    "name": "unnamed pumps",
+    "lat": 36.40493,
+    "lon": -80.98773,
+    "note": "Roaring Gap, ~1 mi, brand unverified"
+   }
+  ],
+  "state": "NC"
+ },
+ {
+  "mp": 248.1,
+  "exit_road": "NC 18, Laurel Springs",
+  "direction": "north/west",
+  "published_distance": "3-6 mi (sources disagree)",
+  "town": "Laurel Springs",
+  "confidence": "unverified",
+  "stations": [],
+  "warning": "NO station could be verified here. Zero OSM fuel nodes within ~12 mi. Listed on official exit lists but do NOT plan a fill-up here. Nearest verified: Speedway Sparta (~13 road mi) or Glendale Springs Marathon.",
+  "state": "NC"
+ },
+ {
+  "mp": 261.2,
+  "exit_road": "NC 16, Glendale Springs",
+  "direction": "north/east",
+  "published_distance": "<1 mi",
+  "town": "Glendale Springs",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Marathon",
+    "lat": 36.31598,
+    "lon": -81.3699,
+    "note": "163 Glendale School Rd"
+   },
+   {
+    "name": "Speedway",
+    "lat": 36.402,
+    "lon": -81.494,
+    "note": "West Jefferson, ~12 mi"
+   }
+  ],
+  "state": "NC"
+ },
+ {
+  "mp": 291.8,
+  "exit_road": "US 321 / US 221, Blowing Rock",
+  "direction": "south",
+  "published_distance": "<1 mi",
+  "town": "Blowing Rock",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Speedway",
+    "lat": 36.14218,
+    "lon": -81.66903,
+    "note": "7206 Valley Blvd"
+   }
+  ],
+  "state": "NC"
+ },
+ {
+  "mp": 312.0,
+  "exit_road": "NC 181, Pineola",
+  "direction": "north",
+  "published_distance": "<2 mi (verified pumps ~7 mi)",
+  "town": "Pineola / Newland",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Quik Shop / Marathon",
+    "lat": 36.08054,
+    "lon": -81.928,
+    "note": "713 Pineola St, Newland \u2014 OSM tags 24/7",
+    "hours": "24/7"
+   }
+  ],
+  "state": "NC"
+ },
+ {
+  "mp": 317.5,
+  "exit_road": "US 221, Linville Falls",
+  "direction": "north",
+  "published_distance": "<2 mi",
+  "town": "Linville Falls",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Mobil / Three Mile Quick Mart",
+    "lat": 35.97802,
+    "lon": -81.95564,
+    "note": "8926 Linville Falls Hwy"
+   },
+   {
+    "name": "Crossnore Exxon",
+    "lat": 36.021,
+    "lon": -81.93,
+    "note": "4264 US-221, ~4 mi, 05:00-23:00"
+   }
+  ],
+  "closure_note": "SOUTHBOUND WALL. MP 317.5 is the north gate of the Helene closure. Fill here \u2014 the Parkway does not continue south.",
+  "state": "NC"
+ },
+ {
+  "mp": 330.9,
+  "exit_road": "NC 226, Gillespie Gap / Spruce Pine",
+  "direction": "north or south",
+  "published_distance": "<3 mi",
+  "town": "Spruce Pine",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Excel",
+    "lat": 35.89144,
+    "lon": -82.06702,
+    "note": "12047 NC-226"
+   },
+   {
+    "name": "Valero",
+    "lat": 35.89645,
+    "lon": -82.06804,
+    "note": "11694 NC-226"
+   }
+  ],
+  "closure_note": "STRANDED. Sits in the orphaned MP 327.5-333.9 segment, closed at both ends. Reachable only from NC 226 \u2014 a detour re-entry point, not an en-route stop.",
+  "state": "NC"
+ },
+ {
+  "mp": 344.1,
+  "exit_road": "NC 80, Buck Creek Gap",
+  "direction": "north",
+  "published_distance": "<10 mi",
+  "town": "Celo / Micaville",
+  "confidence": "likely",
+  "stations": [
+   {
+    "name": "unnamed pumps",
+    "lat": 35.80742,
+    "lon": -82.19996,
+    "note": "NC 80 at Hamrick, brand unverified"
+   }
+  ],
+  "closure_note": "UNREACHABLE. Inside the closed MP 333.9-355.3 Helene segment. Delete from any 2026 route plan.",
+  "state": "NC"
+ },
+ {
+  "mp": 382.5,
+  "exit_road": "US 70, Asheville / Oteen",
+  "direction": "east or west",
+  "published_distance": "<1 mi",
+  "town": "Asheville (Oteen)",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Ingles Gas Express",
+    "lat": 35.58702,
+    "lon": -82.4879,
+    "note": "1139 Tunnel Rd"
+   },
+   {
+    "name": "Sunoco",
+    "lat": 35.598,
+    "lon": -82.402,
+    "note": "2077 US-70, Swannanoa"
+   }
+  ],
+  "closure_note": "Practical SOUTHERN RE-ENTRY after the Helene detour.",
+  "state": "NC"
+ },
+ {
+  "mp": 384.7,
+  "exit_road": "US 74A, Fairview Road",
+  "direction": "east or west",
+  "published_distance": "<2 mi",
+  "town": "Asheville (Oakley)",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Citgo",
+    "lat": 35.56606,
+    "lon": -82.51023,
+    "note": "790 Fairview Rd"
+   }
+  ],
+  "state": "NC"
+ },
+ {
+  "mp": 388.8,
+  "exit_road": "US 25, Hendersonville Rd / Biltmore",
+  "direction": "north or south",
+  "published_distance": "<1 mi S / <3 mi N",
+  "town": "Asheville (Biltmore)",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Speedway",
+    "lat": 35.54928,
+    "lon": -82.53517,
+    "note": "648 Hendersonville Rd"
+   }
+  ],
+  "closure_note": "I-26 bridge work near MP 391 \u2014 delays, not closure.",
+  "state": "NC"
+ },
+ {
+  "mp": 393.6,
+  "exit_road": "NC 191, Brevard Road",
+  "direction": "north or south",
+  "published_distance": "<3 mi",
+  "town": "Asheville",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Hot Spot",
+    "lat": 35.52238,
+    "lon": -82.60647,
+    "note": "Brevard Rd"
+   },
+   {
+    "name": "Ingles Gas Express",
+    "lat": 35.53036,
+    "lon": -82.60622,
+    "note": "Brevard Rd"
+   }
+  ],
+  "warning": "LAST FUEL before the longest open-road gap on the NC Parkway (49.5 mi to Balsam Gap, one hard-to-reach exit in between).",
+  "state": "NC"
+ },
+ {
+  "mp": 411.8,
+  "exit_road": "US 276, Wagon Road Gap",
+  "direction": "north or south",
+  "published_distance": "10 mi N / 15 mi S (realistically 12-18 mi)",
+  "town": "Cruso / Bethel (N), Brevard (S)",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "BP",
+    "lat": 35.46886,
+    "lon": -82.87814,
+    "note": "Cruso Rd (US 276)"
+   },
+   {
+    "name": "Mobil",
+    "lat": 35.47144,
+    "lon": -82.88868,
+    "note": "Pigeon Rd, Bethel"
+   },
+   {
+    "name": "Marathon",
+    "lat": 35.257,
+    "lon": -82.71636,
+    "note": "N Broad St, Brevard"
+   }
+  ],
+  "warning": "The ONLY exit between MP 393.6 and MP 443.1, and it costs 12-18 mi each way. This is the stretch that strands riders.",
+  "state": "NC"
+ },
+ {
+  "mp": 443.1,
+  "exit_road": "US 23/74, Balsam Gap",
+  "direction": "east or west",
+  "published_distance": "5 mi E / 6 mi W",
+  "town": "Waynesville (E) / Sylva (W)",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Ingles Gas Express",
+    "lat": 35.498,
+    "lon": -82.99366,
+    "note": "Dolan Rd, Waynesville"
+   },
+   {
+    "name": "Enmarket",
+    "lat": 35.36884,
+    "lon": -83.20303,
+    "note": "Sylva, ~8.5 mi W"
+   }
+  ],
+  "state": "NC"
+ },
+ {
+  "mp": 455.7,
+  "exit_road": "US 19, Soco Gap",
+  "direction": "north/west",
+  "published_distance": "4 mi",
+  "town": "Maggie Valley",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Shell / Soco Groceries & Meat",
+    "lat": 35.51888,
+    "lon": -83.10542,
+    "note": "4593 Soco Rd",
+    "hours": "24 hours"
+   }
+  ],
+  "state": "NC"
+ },
+ {
+  "mp": 469.1,
+  "exit_road": "US 441, Cherokee (southern terminus)",
+  "direction": "south",
+  "published_distance": "<1 mi",
+  "town": "Cherokee",
+  "confidence": "verified",
+  "stations": [
+   {
+    "name": "Exxon",
+    "lat": 35.49834,
+    "lon": -83.30737,
+    "note": "Acquoni Rd"
+   },
+   {
+    "name": "BP",
+    "lat": 35.49571,
+    "lon": -83.31308,
+    "note": "1340 Tsali Blvd"
+   }
+  ],
+  "state": "NC"
+ }
+]
