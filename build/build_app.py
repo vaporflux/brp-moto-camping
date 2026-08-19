@@ -17,6 +17,7 @@ Run: python3 build/build_app.py
 """
 import json
 import os
+import re
 import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,23 +30,46 @@ def read(path):
         return f.read()
 
 
-def check_js(paths):
+def read_script(path):
+    """Read a source file as it will actually be inlined.
+
+    map-pins.js is authored as an ES module so it stays a drop-in for anyone loading it
+    with <script type="module">. This page is a single self-contained file with plain
+    <script> blocks, where a top-level `export` is a syntax error, so the keyword is
+    stripped on the way in. Everything the module declares is a top-level const or
+    function, which a classic script hands to the scripts that follow it -- which is how
+    app.js sees pinIcon() and LINE.
+    """
+    text = read(path)
+    return re.sub(r"^export\s+(?=(const|function|let)\b)", "", text, flags=re.M)
+
+
+def check_js(sources):
     """Refuse to build a page whose JavaScript does not parse.
 
     Inlining is a string replace, so a syntax error in a source file used to ship in
     silence -- the build printed success, every Python test still passed, and the page
     was dead in the browser. Node parses it here instead, before anything is written.
     Skipped, loudly, if node is absent.
+
+    The text checked is the text that gets inlined, not the file on disk: map-pins.js
+    only parses as a classic script once its exports are stripped, and checking the
+    original would prove the wrong thing.
     """
     import shutil
+    import tempfile
     if not shutil.which("node"):
         print("  WARNING: node not found -- JavaScript not syntax-checked")
         return
-    for path in paths:
-        r = subprocess.run(["node", "--check", path], capture_output=True, text=True)
-        if r.returncode != 0:
-            raise SystemExit(f"{os.path.basename(path)} does not parse:\n{r.stderr.strip()}")
-    print(f"  {len(paths)} JavaScript files parse")
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, text in sources:
+            path = os.path.join(tmp, name)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            r = subprocess.run(["node", "--check", path], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise SystemExit(f"{name} does not parse:\n{r.stderr.strip()}")
+    print(f"  {len(sources)} JavaScript files parse")
 
 
 def main():
@@ -54,17 +78,19 @@ def main():
     data = data.replace("</", "<\\/")
 
     html = read(os.path.join(SRC, "shell.html"))
-    check_js([os.path.join(SRC, n) for n in ("core.js", "route.js", "gpx.js", "app.js")])
+    scripts = [("core.js", "__CORE_JS__"), ("route.js", "__ROUTE_JS__"),
+               ("gpx.js", "__GPX_JS__"), ("map-pins.js", "__MAPPINS_JS__"),
+               ("app.js", "__APP_JS__")]
+    js = {name: read_script(os.path.join(SRC, name)) for name, _ in scripts}
+    check_js([(name, js[name]) for name, _ in scripts])
     for token, path in [
         ("__LEAFLET_CSS__", os.path.join(SRC, "..", "vendor", "leaflet.css")),
         ("__APP_CSS__", os.path.join(SRC, "styles.css")),
         ("__LEAFLET_JS__", os.path.join(SRC, "..", "vendor", "leaflet.js")),
-        ("__CORE_JS__", os.path.join(SRC, "core.js")),
-        ("__ROUTE_JS__", os.path.join(SRC, "route.js")),
-        ("__GPX_JS__", os.path.join(SRC, "gpx.js")),
-        ("__APP_JS__", os.path.join(SRC, "app.js")),
     ]:
         html = html.replace(token, read(path))
+    for name, token in scripts:
+        html = html.replace(token, js[name])
     html = html.replace("__DATA__", data)
 
     # The header lockup is the same artwork the icons are cut from. Inlined rather than
@@ -91,7 +117,8 @@ def main():
     size = os.path.getsize(OUT)
     print(f"index.html (deployed)  {size/1024:.0f} KB")
     for token in ("__LEAFLET_CSS__", "__APP_CSS__", "__LEAFLET_JS__", "__DATA__",
-                  "__CORE_JS__", "__ROUTE_JS__", "__GPX_JS__", "__APP_JS__", "__MARK_SVG__"):
+                  "__CORE_JS__", "__ROUTE_JS__", "__GPX_JS__", "__MAPPINS_JS__",
+                  "__APP_JS__", "__MARK_SVG__"):
         assert token not in html, f"unsubstituted token {token}"
     assert html.count("<html") == 1
     print("  all tokens substituted")

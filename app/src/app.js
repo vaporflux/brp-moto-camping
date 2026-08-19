@@ -841,7 +841,9 @@
     layers.preview.clearLayers();
     // The full card goes in the popup as a live DOM node, so its buttons work and the
     // rider decides while looking at the location rather than at a sidebar.
-    L.marker([c.lat, c.lon], { icon: dot(C('--amber', '#f0b44a'), 20) })
+    const kind = c.kind === 'fuel' ? 'fuel' : placeKind(c);
+    const opts = c.kind === 'fuel' && c._fuel ? fuelOpts(c._fuel) : placeOpts(c);
+    L.marker([c.lat, c.lon], { icon: selectedIcon(kind, opts), zIndexOffset: 600 })
       .bindPopup(previewCard(c), {
         className: 'place-popup', maxWidth: 330, minWidth: 260,
         autoPan: true, autoPanPadding: [16, 16], keepInView: true, closeButton: true
@@ -852,7 +854,7 @@
     if (c.mp != null && (c.off_parkway_mi || 0) >= 0.3) {
       const [plat, plon] = BRP.coordAtMp(c.mp);
       L.polyline([[plat, plon], [c.lat, c.lon]],
-                 { color: C('--amber', '#f0b44a'), weight: 2, dashArray: '3 5', opacity: .9 })
+                 { color: LINE.yourRoute.color, weight: 2, dashArray: '3 5', opacity: .9 })
         .addTo(layers.preview);
     }
   }
@@ -1753,7 +1755,7 @@
     layers.parkway = L.layerGroup().addTo(map);
     D.segment_geometry.forEach((geom, i) => {
       const seg = D.segments[i];
-      L.polyline(geom, { color: C('--sky', '#7fd3f5'), weight: 4, opacity: .9 })
+      L.polyline(geom, Object.assign({ opacity: .9 }, LINE.parkwayOpen))
         .bindPopup(`<h3>Parkway open</h3>MP ${seg.from_mp}–${seg.to_mp} · ${seg.length_mi} mi`)
         .addTo(layers.parkway);
     });
@@ -1762,13 +1764,14 @@
       const a = BRP.coordAtMp(c.from_mp), b = BRP.coordAtMp(c.to_mp);
       const i0 = BRP.indexAtMp(c.from_mp), i1 = BRP.indexAtMp(c.to_mp);
       const geom = [a, ...D.parkway.slice(i0, i1 + 1), b];
-      L.polyline(geom, { color: C('--rust', '#e0623a'), weight: 4, opacity: .95, dashArray: '7 6' })
+      L.polyline(geom, Object.assign({ opacity: .95 }, LINE.parkwayClosed))
         .bindPopup(`<h3>Closed · MP ${c.from_mp}–${c.to_mp}</h3>${c.reason}` +
                    (c.detour ? `<br><br>Detour: ${c.detour}` : '<br><br>No detour — this severs the Parkway.'))
         .addTo(layers.closed);
     });
 
     layers.stops = L.layerGroup().addTo(map);
+    layers.spider = L.layerGroup().addTo(map);
     layers.route = L.layerGroup().addTo(map);
     layers.preview = L.layerGroup().addTo(map);
 
@@ -1784,6 +1787,9 @@
       save();
       render();
     });
+    // Clustering is computed in screen space, so it has to be recomputed whenever the
+    // screen moves. placePins() bails early when the visible set has not changed.
+    map.on('zoomend moveend', placePins);
     refreshLegend();
     drawMarkers();
     initMapToggle();
@@ -1832,49 +1838,61 @@
     (getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim()
     || fallback;
 
-  /* The map's whole vocabulary, in one place.
+  /* The map's whole vocabulary lives in map-pins.js, not here.
    *
-   * The legend used to be nowhere and the colours were literals scattered through
-   * drawMarkers and drawRoute. A legend written separately from the code that draws is a
-   * legend that goes stale, so both read this.
+   * It used to live in a MAPKEY() table next to a separate set of colour functions, and
+   * the two said different things: a dot's colour meant "what kind of place is this" for
+   * campgrounds and "how much do you trust this" for fuel, so amber was simultaneously
+   * "top pick" and "unconfirmed". Nine meanings shared six colours, three of them exact
+   * duplicates.
+   *
+   * The rule now is shape for category, fill for trust, a star for a top pick -- three
+   * channels for three variables, and no colour doing two jobs. What is left in this file
+   * is the mapping from OUR data to that vocabulary; the drawing and the legend both come
+   * out of pinSvg(), so the key cannot describe a marker the map does not draw.
    */
-  const MAPKEY = () => ({
-    lines: [
-      { color: C('--sky', '#7fd3f5'), label: 'Parkway open', note: 'rideable in 2026' },
-      { color: C('--rust', '#e0623a'), label: 'Parkway closed',
-        note: 'dashed — Helene damage and roadworks', dash: true },
-      { color: C('--amber', '#f0b44a'), label: 'Your route', note: 'the ride as planned' },
-      { color: C('--moss', '#6fc08a'), label: 'Road legs',
-        note: 'to the Parkway, off to camp, home' },
-      { color: C('--dim', '#9fb6c4'), label: 'Straight-line estimate',
-        note: 'no road route came back', dash: true }
-    ],
-    places: [
-      { color: C('--amber', '#f0b44a'), label: 'Top pick' },
-      { color: C('--rust', '#e0623a'), label: 'Motorcycle camp' },
-      { color: C('--moss', '#6fc08a'), label: 'Campground' },
-      { color: C('--sky', '#7fd3f5'), label: 'Hotel or motel' }
-    ],
-    fuel: [
-      { color: C('--sky', '#7fd3f5'), label: 'Fuel — researched',
-        note: 'verified for this planner' },
-      { color: C('--faint', '#8ea3ae'), label: 'Fuel — Google', note: 'listed, not visited' },
-      { color: C('--amber', '#f0b44a'), label: 'Fuel — unconfirmed' },
-      { color: C('--rust', '#e0623a'), label: 'Fuel — do not rely on it' },
-      { color: C('--off', '#5b7280'), label: 'Fuel — unreachable in 2026' }
-    ]
+
+  const placeKind = c => c.kind === 'hotel' ? 'hotel' : c.moto ? 'moto' : 'camp';
+
+  /* Cream is the claim that a human checked this place for this planner. That is exactly
+   * what `source: 'curated'` means -- 32 places out of 478 -- and it used to be encoded as
+   * "a bigger dot", a fourth variable in a channel the key never demonstrated. The other
+   * 446 come from OSM and Google: real places, nobody rode to them, so they get the
+   * dashed slate ring that says listed-not-verified. */
+  const placeOpts = c => ({
+    trust: c.source === 'curated' ? 'verified' : 'listed',
+    top: c.tier === 'top'
   });
 
-  const PLACE_COLOR = c => c.kind === 'hotel' ? C('--sky', '#7fd3f5')
-                         : c.moto ? C('--rust', '#e0623a')
-                         : c.tier === 'top' ? C('--amber', '#f0b44a') : C('--moss', '#6fc08a');
-  // Google-listed pumps get a paler blue than researched ones: usable, and visibly a
-  // weaker claim, without inventing a whole new colour for a fifth state.
-  const FUEL_COLOR = f => ({
-    usable: C('--sky', '#7fd3f5'), usable_via_detour: C('--sky', '#7fd3f5'),
-    usable_google: C('--faint', '#8ea3ae'),
-    unconfirmed: C('--amber', '#f0b44a'), do_not_rely: C('--rust', '#e0623a'),
-    unreachable: C('--off', '#5b7280') }[f.plan_grade] || C('--sky', '#7fd3f5'));
+  /* Fuel, in the order the checks have to happen.
+   *
+   * Unreachable is decided by the closure model, not by a note: MP 344.1 NC 80 sits inside
+   * the severed MP 333.9-355.3 section, and what says so is plan_grade, not prose.
+   *
+   * An exit with no stations is `avoid` whatever its confidence claims -- MP 248.1 Laurel
+   * Springs is on every official fuel list and has no verifiable pump behind it.
+   *
+   * Then the trust split. 26 usable and 8 usable-via-detour exits were researched by hand,
+   * so they are cream. The 247 that came back from the Google sweep are real listings that
+   * nobody has ridden to, so they are dashed slate: usable, and visibly a weaker claim.
+   * That distinction is the whole reason the sweep was run separately from the curation. */
+  function fuelOpts(f) {
+    if (f.plan_grade === 'unreachable') return { trust: 'avoid', struck: true };
+    if (!f.stations || !f.stations.length) return { trust: 'avoid' };
+    if (f.plan_grade === 'do_not_rely') return { trust: 'avoid' };
+    if (f.plan_grade === 'usable_google') return { trust: 'listed' };
+    if (f.confidence === 'likely' || f.confidence === 'unverified')
+      return { trust: 'listed' };
+    return { trust: 'verified' };
+  }
+
+  /* Selection scales and glows; it never recolours. Fill already carries trust, so an
+   * amber selected pin would be claiming the place is a top pick. */
+  function selectedIcon(kind, opts) {
+    const icon = pinIcon(kind, Object.assign({ size: 38 }, opts));
+    icon.options.className = 'brp-pin is-selected';
+    return icon;
+  }
 
   /* A legend the rider can collapse. Open by default the first time, because a map of
    * unexplained coloured dots is the thing being fixed; remembered thereafter. */
@@ -1888,28 +1906,14 @@
     box.append(head);
     if (!state.legendOpen) return box;
 
+    // Rows come from legendHtml(), which draws its swatches with the same pinSvg() the
+    // markers use. Hand-written swatches are how a key goes stale; these physically
+    // cannot. The two section headings are load-bearing -- "what the shape means" and
+    // "what the colour means" are what teach the rule, so they are not retitled back to
+    // "Places to stay" and "Fuel", which is the grouping that caused the confusion.
     const body = el('div', 'legend-body');
-    const group = (title, items, kind) => {
-      body.append(el('div', 'legend-group', title));
-      items.forEach(it => {
-        const row = el('div', 'legend-row');
-        const sw = el('span', `legend-swatch ${kind}`);
-        sw.style.background = it.color;
-        if (it.dash) sw.style.backgroundImage =
-          `repeating-linear-gradient(90deg, ${it.color} 0 4px, transparent 4px 7px)`;
-        row.append(sw);
-        row.append(el('span', 'legend-label', it.label));
-        if (it.note) row.append(el('span', 'legend-note', it.note));
-        body.append(row);
-      });
-    };
-    const key = MAPKEY();
-    group('Lines', key.lines, 'line');
-    group('Places to stay', key.places, 'pin');
-    group('Fuel', key.fuel, 'pin');
-    body.append(el('div', 'legend-note',
-      'A bigger dot is a place researched for this planner. Tap any marker to see it; '
-      + 'nothing is added to your trip until you say so.'));
+    body.innerHTML = legendHtml();
+    body.append(el('div', 'key-footer', LEGEND_FOOTER));
     box.append(body);
     return box;
   }
@@ -1922,6 +1926,14 @@
     host.append(mapLegend());
   }
 
+  /* Route furniture -- where the ride starts, and the shaping points on it.
+   *
+   * These stay plain dots on purpose. The glyph pins answer "what is this place and how
+   * much do you trust it"; a start point and a via waypoint are neither. Giving them a
+   * tent or a bed would invite a tap that adds them to the trip, and inventing a glyph
+   * for each would put two more shapes in a key whose whole point is that it is short.
+   * They are half the size of a pin, carry no ring colour from the trust scale, and the
+   * vias take the route's own magenta so they read as belonging to the line. */
   function dot(color, size = 11) {
     return L.divIcon({
       className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
@@ -1940,6 +1952,8 @@
    */
   function drawMarkers() {
     layers.stops.clearLayers();
+    if (layers.spider) layers.spider.clearLayers();
+    const pins = [];
 
     if (state.filters.campground) {
       (D.places || []).forEach(c => {
@@ -1950,18 +1964,18 @@
                        c.off_parkway_mi != null && c.off_parkway_mi >= 0.3
                          ? `${c.off_parkway_mi} mi off the Parkway` : 'on the Parkway']
                       .filter(Boolean).join(' · ');
-        L.marker([c.lat, c.lon],
-                 { icon: dot(PLACE_COLOR(c), c.source === 'curated' ? 12 : 9),
-                   keyboard: true, title: label, alt: label })
-          .bindTooltip(label, { direction: 'top', sticky: true })
-          .on('click', () => {
+        pins.push({
+          at: [c.lat, c.lon], label,
+          icon: () => pinIcon(placeKind(c), placeOpts(c)),
+          z: c.tier === 'top' ? 400 : 0,
+          open: () => {
             state.previewId = c.id;
             state.tab = 'plan';
             state.addingStop = true;
             render();
             previewOnMap(c);
-          })
-          .addTo(layers.stops);
+          }
+        });
       });
     }
 
@@ -1973,17 +1987,172 @@
         const label = [`FUEL ${f.exit_road}`, `MP ${f.mp}`, f.town, grade,
                        f.detour_plan_mi ? `${f.detour_plan_mi} mi off` : null]
                       .filter(Boolean).join(' · ');
-        L.marker(at, { icon: dot(FUEL_COLOR(f), 9), keyboard: true,
-                       title: label, alt: label })
-          .bindTooltip(label, { direction: 'top', sticky: true })
-          .on('click', () => {
+        pins.push({
+          at, label,
+          icon: () => pinIcon('fuel', fuelOpts(f)),
+          z: 200,
+          open: () => {
             state.previewId = `fuel-${f.mp}`;
             render();
             previewOnMap(fuelAsPlace(f, at));
-          })
-          .addTo(layers.stops);
+          }
+        });
       });
     }
+
+    allPins = pins;
+    lastPlacement = '';
+    placePins();
+  }
+
+  /* Everything the map could draw, and what it drew last time, so a pan does not have to
+   * rebuild the labels and the icon options from scratch. */
+  let allPins = [], lastPlacement = '';
+
+  /* Draw only what is on screen, and only where the glyphs do not overlap.
+   *
+   * 478 places and 283 fuel exits is 761 markers strung along one 469-mile road. As 9px
+   * dots that was merely crowded; as 30px glyphs the default view is a solid smear of
+   * overlapping pins from Virginia to North Carolina, which is worse than the problem the
+   * glyphs were drawn to fix.
+   *
+   * Shrinking them is not the way out -- below about 20px the tent and the pump stop being
+   * separable, and then the shape channel carries nothing. So pins that would collide are
+   * replaced by one neutral disc carrying the count, and tapping it zooms in far enough to
+   * break the group apart. The disc is deliberately outside the pin vocabulary: no glyph,
+   * no trust fill, so it can never be misread as a place.
+   *
+   * Off-screen pins are not drawn at all. On a phone that is the difference between a few
+   * dozen DOM nodes and seven hundred.
+   */
+  function placePins() {
+    if (!map) return;
+    const zoom = map.getZoom();
+    const bounds = map.getBounds().pad(0.25);
+
+    // Highest priority first, because the first pin to claim a spot is the one that stays
+    // a real pin -- so a top pick keeps its star and its tent, and the anonymous Google
+    // hotel next door is the one that disappears into the count.
+    const visible = allPins.filter(p => bounds.contains(p.at))
+                           .sort((a, b) => b.z - a.z);
+
+    /* Claim-a-spot clustering, in screen pixels.
+     *
+     * The obvious version buckets pins into a fixed grid, and it is wrong in a way that
+     * only shows up on the map: two pins either side of a cell boundary land in different
+     * buckets, both draw at their true position, and they overlap exactly as if nothing
+     * had been done. Here each pin instead claims a spot, and any later pin closer than
+     * MIN_PX joins it rather than drawing its own -- so no two markers can ever be nearer
+     * than one marker's width, which is the property actually wanted.
+     *
+     * The hash is only an index over the claimed spots, so this stays linear rather than
+     * comparing all 761 pins with each other.
+     */
+    const MIN_PX = 36;
+    const anchors = [];
+    const hash = new Map();
+    visible.forEach(p => {
+      const pt = map.project(p.at, zoom);
+      const cx = Math.floor(pt.x / MIN_PX), cy = Math.floor(pt.y / MIN_PX);
+      let host = null;
+      for (let dx = -1; dx <= 1 && !host; dx++) {
+        for (let dy = -1; dy <= 1 && !host; dy++) {
+          (hash.get(`${cx + dx}:${cy + dy}`) || []).some(a => {
+            if (pt.distanceTo(a.pt) < MIN_PX) { host = a; return true; }
+            return false;
+          });
+        }
+      }
+      if (host) { host.group.push(p); return; }
+      const anchor = { pt, at: p.at, group: [p] };
+      anchors.push(anchor);
+      const key = `${cx}:${cy}`;
+      const bucket = hash.get(key);
+      if (bucket) bucket.push(anchor); else hash.set(key, [anchor]);
+    });
+
+    // Redrawing hundreds of markers on every pan is the expensive part, so skip it when
+    // the pan did not actually change what gets drawn.
+    const stamp = zoom + '|' + anchors.map(a => `${Math.round(a.pt.x)},${Math.round(a.pt.y)},${a.group.length}`).join(';');
+    if (stamp === lastPlacement) return;
+    lastPlacement = stamp;
+
+    layers.stops.clearLayers();
+    anchors.forEach(a => {
+      if (a.group.length === 1) {
+        const p = a.group[0];
+        L.marker(p.at, { icon: p.icon(), zIndexOffset: p.z,
+                         keyboard: true, title: p.label, alt: p.label })
+          .bindTooltip(p.label, { direction: 'top', sticky: true })
+          .on('click', p.open)
+          .addTo(layers.stops);
+        return;
+      }
+      const label = `${a.group.length} markers here — tap to spread them out`;
+      L.marker(a.at, { icon: clusterIcon(a.group.length), zIndexOffset: 100,
+                       keyboard: true, title: label, alt: label })
+        .bindTooltip(label, { direction: 'top' })
+        .on('click', () => {
+          if (separates(a.group)) {
+            map.fitBounds(L.latLngBounds(a.group.map(q => q.at)), { padding: [40, 40] });
+          } else {
+            fanOut(a);
+          }
+        })
+        .addTo(layers.stops);
+    });
+  }
+
+  /* Would zooming in actually break this group apart?
+   *
+   * Usually yes, and then the tap should just zoom. But 56 groups on this map never
+   * separate at any zoom the tiles go to, and the worst is twenty fuel stations sharing a
+   * single Parkway anchor -- every pump the Google sweep found at one exit is recorded
+   * against the same point on the road. Zooming into those forever is a dead end, and a
+   * dead end over twenty fuel options is the kind that strands somebody. */
+  function separates(group) {
+    const z = map.getMaxZoom() || 17;
+    const pts = group.map(p => map.project(p.at, z));
+    return pts.some((a, i) => pts.some((b, j) => j > i && a.distanceTo(b) >= 36));
+  }
+
+  /* Fan the group out on a ring around where it sits, with a leader line back to the
+   * middle, so co-located markers can still be read and tapped one at a time. Positions
+   * are pixel offsets converted back to real coordinates, so panning keeps them honest;
+   * a zoom recomputes the whole map anyway, so the ring is dropped then. */
+  function fanOut(anchor) {
+    layers.spider.clearLayers();
+    const zoom = map.getZoom();
+    const n = anchor.group.length;
+    const r = Math.max(46, Math.round(n * 36 / (2 * Math.PI)));
+    const centre = map.project(anchor.at, zoom);
+    anchor.group.forEach((p, i) => {
+      const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+      const at = map.unproject(
+        L.point(centre.x + r * Math.cos(angle), centre.y + r * Math.sin(angle)), zoom);
+      L.polyline([anchor.at, at],
+                 { color: '#93a8b4', weight: 1, opacity: .8 }).addTo(layers.spider);
+      L.marker(at, { icon: p.icon(), zIndexOffset: 500 + p.z,
+                     keyboard: true, title: p.label, alt: p.label })
+        .bindTooltip(p.label, { direction: 'top', sticky: true })
+        .on('click', p.open)
+        .addTo(layers.spider);
+    });
+    // The ring is drawn at one zoom's pixel offsets, so it stops meaning anything at any
+    // other zoom.
+    map.once('zoomend', () => layers.spider.clearLayers());
+  }
+
+  /* Neutral by design: a count, not a category. Sized by how much it is hiding, capped so
+   * a 200-pin group does not become a dinner plate. */
+  function clusterIcon(n) {
+    const size = n < 10 ? 26 : n < 50 ? 30 : 34;
+    return L.divIcon({
+      className: 'brp-cluster', iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      html: `<div style="width:${size}px;height:${size}px;line-height:${size - 4}px">`
+          + `${n > 999 ? '999+' : n}</div>`
+    });
   }
 
   /* A fuel exit, shaped like a place so it can use the same card. The rider gets the same
@@ -2020,12 +2189,11 @@
       (trip.roadLegs || []).forEach(leg => {
         const road = Directions.peek(leg.from, leg.to);
         if (road && road.ok && road.polyline && road.polyline.length > 1) {
-          L.polyline(road.polyline, { color: C('--moss', '#6fc08a'), weight: 4, opacity: .95 })
+          L.polyline(road.polyline, Object.assign({ opacity: .95 }, LINE.roadLeg))
             .bindTooltip(`${leg.label} — ${road.distance_mi} mi by road`, { sticky: true })
             .addTo(layers.route);
         } else {
-          L.polyline([leg.from, leg.to],
-                     { color: C('--dim', '#9fb6c4'), weight: 2, opacity: .7, dashArray: '4 7' })
+          L.polyline([leg.from, leg.to], Object.assign({ opacity: .8 }, LINE.estimate))
             .bindTooltip(`${leg.label} — straight-line estimate, not a road route`,
                          { sticky: true })
             .addTo(layers.route);
@@ -2044,12 +2212,12 @@
                    : (r.track.length ? [r.track] : []);
         runs.forEach(run => {
           if (run.length > 1) {
-            L.polyline(run, { color: C('--amber', '#f0b44a'), weight: 5, opacity: .95 })
+            L.polyline(run, Object.assign({ opacity: .95 }, LINE.yourRoute))
               .addTo(layers.route);
           }
         });
         r.rtepts.filter(p => p.type === 'via').forEach(p => {
-          L.marker([p.lat, p.lon], { icon: dot(C('--fg', '#f2efe6'), 14) })
+          L.marker([p.lat, p.lon], { icon: dot(LINE.yourRoute.color, 12) })
             .bindTooltip(p.name, { direction: 'top' }).addTo(layers.route);
         });
       });
