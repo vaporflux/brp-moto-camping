@@ -582,6 +582,11 @@ const Access = (() => {
     }
 
     return { ok: true, stops, notes, tankAt,
+             // Where each waypoint falls along the journey line. The itinerary needs this
+             // to place a fuel stop on the correct LEG: a round trip passes the same
+             // milepost twice, and a stop at mile 378 of a 556 mile ride is on the way
+             // home, not on the way out.
+             waypointPos,
              exitReserveMi: exit.mi,
              exitReserveStop: exit.stop ? { mp: exit.stop.mp, town: exit.stop.town } : null,
              arriveWithMi: Math.round((remaining - (journeyMi - at)) * 10) / 10,

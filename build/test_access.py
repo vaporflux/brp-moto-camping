@@ -216,6 +216,32 @@ def main():
     check("and carries no explanation, because none is owed",
           south["severed_alternative"] is None, str(south["severed_alternative"]))
 
+    print("a round trip puts fuel stops on the leg they belong to")
+    # Abingdon to Devils Backbone and home: 556 mi of Parkway, entering and leaving at
+    # MP 291.8 and camping at MP 13.7. Its two fuel stops fall at mile 186 and mile 378 --
+    # one outbound, one homeward. Rendered as a flat list they read as two stops twelve
+    # miles apart, and they hid the fact that there IS fuel after camp.
+    rt = A.plan_journey(fuel, [291.8, 13.7, 291.8], tank_mi=200,
+                        max_detour_mi=8, component=0)
+    check("the round trip plans", rt["ok"], rt.get("error"))
+    check("it measures both directions", abs(rt["parkway_mi"] - 556.2) < 1,
+          str(rt["parkway_mi"]))
+    check("waypoint positions are reported", len(rt["waypoint_pos"]) == 3,
+          str(rt.get("waypoint_pos")))
+    camp_pos = rt["waypoint_pos"][1]
+    outbound = [s for s in rt["stops"] if s["pos"] <= camp_pos]
+    homeward = [s for s in rt["stops"] if s["pos"] > camp_pos]
+    check("one fuel stop is on the way out", len(outbound) == 1, str(len(outbound)))
+    check("and one is on the way home", len(homeward) == 1, str(len(homeward)))
+    # Same milepost region, 193 miles apart in riding. Ordering by milepost would put them
+    # side by side; ordering by journey position keeps them where they happen.
+    check("they are far apart in riding, not in milepost",
+          homeward[0]["pos"] - outbound[0]["pos"] > 150,
+          f"{outbound[0]['pos']:.1f} -> {homeward[0]['pos']:.1f}")
+    check("the rider leaves camp on what they arrived with, then refuels",
+          rt["tank_at"][1]["tank_mi"] < 200 and rt["tank_at"][2]["tank_mi"] > 0,
+          str(rt["tank_at"]))
+
     print("greedy picks the furthest reachable pump")
     if plan["ok"] and plan["stops"]:
         first = plan["stops"][0]
