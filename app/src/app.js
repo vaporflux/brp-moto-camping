@@ -1156,14 +1156,25 @@
       // "2 fuel stops on the way" is technically true of a round trip and reads as two
       // stops on the outbound leg. Split it, so the count matches what the list shows.
       const lastStay = (f.waypointPos || [])[state.stops.length];
+      // The top-off is counted separately. It is not a stop the tank forced -- it is the
+      // stop that makes the rest of the arithmetic true, and lumping it in inflates the
+      // count a rider uses to judge how broken up their day is.
+      const forced = f.stops.filter(x => !x.topOff);
       const home = lastStay == null ? 0
-        : f.stops.filter(x => x.pos > lastStay + 1e-6).length;
-      const out = f.stops.length - home;
-      fuelLine = home && out
-        ? `${f.stops.length} fuel stops — ${out} on the way out, ${home} on the way home.`
+        : forced.filter(x => x.pos > lastStay + 1e-6).length;
+      const out = forced.length - home;
+      const fill = f.topOff
+        ? `Top off at ${f.topOff.town || f.topOff.road} (MP ${f.topOff.mp})`
+          + (f.topOff.intoRideMi >= 0.5 ? `, ${Math.round(f.topOff.intoRideMi)} mi in` : ``)
+          + `. `
+        : ``;
+      fuelLine = fill + (
+        !forced.length ? `No further fuel stop needed.`
+        : home && out
+        ? `Then ${forced.length} fuel stops — ${out} on the way out, ${home} on the way home.`
         : home
-        ? `${home} fuel stop${home > 1 ? 's' : ''} on the way home.`
-        : `${out} fuel stop${out > 1 ? 's' : ''} on the way.`;
+        ? `Then ${home} fuel stop${home > 1 ? 's' : ''} on the way home.`
+        : `Then ${out} fuel stop${out > 1 ? 's' : ''} on the way.`);
     } else if (thin) {
       fuelLine = `It fits on one tank, but only just — you arrive with about `
                + `${f.arriveWithMi} mi left. Fill up before MP ${c.mp}, or raise how far `
@@ -1241,17 +1252,22 @@
         // just typed. So this fires only below the buffer -- or below 10 mi when they
         // have set no buffer at all, which is the case the buffer exists to prevent.
         const floor = Math.max(10, f.arriveMinMi || 0);
-        const tight = stop.arriveTankMi < floor - 0.05;
+        // The top-off has no arrival figure and must not pretend to: what is in the tank
+        // when the rider reaches the FIRST pump is the one number nobody has told us, and
+        // saying "about null mi in the tank" is how a placeholder ships.
+        const tight = !stop.topOff && stop.arriveTankMi < floor - 0.05;
         const homeward = stop.pos > lastStayPos + 1e-6;
         const detail = [
           homeward ? 'On the way home' : null,
           stop.detourMi ? `${stop.detourMi} mi off the Parkway` : 'right at the exit',
-          tight ? `cutting it fine — you arrive with about ${stop.arriveTankMi} mi in the tank`
-                : `about ${stop.arriveTankMi} mi in the tank on arrival`
+          stop.topOff
+            ? 'fill up here — everything after this is planned from a full tank'
+            : tight ? `cutting it fine — you arrive with about ${stop.arriveTankMi} mi in the tank`
+                    : `about ${stop.arriveTankMi} mi in the tank on arrival`
         ].filter(Boolean).join(' \u00b7 ');
         events.push({ pos: stop.pos, order: 2, row: () => stepRow(
           `MP ${stop.mp}`,
-          `Fuel — ${fuelLabel(stop)}`,
+          stop.topOff ? `Top off — ${fuelLabel(stop)}` : `Fuel — ${fuelLabel(stop)}`,
           detail, (tight || stop.grade === 'unconfirmed') ? 'alert' : 'fuel') });
       });
     }

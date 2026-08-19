@@ -13,7 +13,7 @@
  * The API routes are never cached: a stale Google answer about whether a campground is
  * open is worse than an honest failure.
  */
-const VERSION = 'brp-v6-safearea';
+const VERSION = 'brp-v7-topoff';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 const TILE_LIMIT = 1200;              // ~15-25 MB, enough for a planned corridor

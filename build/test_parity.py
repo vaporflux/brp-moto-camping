@@ -33,7 +33,32 @@ const { chromium } = require('playwright');
     const stops = [BRP.asStop(f(382.5), 'start'), BRP.asStop(f(393.6)),
                    BRP.asStop(c('Lake Powhatan'))];
     const day = Router.buildDay(stops);
+    // The fuel planner is the other body of subtle logic mirrored between Python and this
+    // port, and until now nothing compared it -- test_parity only ever checked the GPX.
+    // A journey that crosses a whole component, and a round trip that passes the same
+    // mileposts twice in opposite directions.
+    const PLANS = [
+      { label: 'one way', waypoints: [0.0, 200.0], tankMi: 90, component: 0 },
+      { label: 'round trip', waypoints: [291.8, 13.7, 291.8], tankMi: 200, component: 0 },
+      { label: 'buffered', waypoints: [291.8, 13.7, 291.8], tankMi: 200, component: 0,
+        arriveMinMi: 25 },
+      { label: 'no top-off', waypoints: [0.0, 200.0], tankMi: 90, component: 0,
+        topOff: false },
+    ];
+    const plans = PLANS.map(spec => {
+      const r = Access.planJourney({ maxDetourMi: 8, ...spec });
+      return { label: spec.label, ok: r.ok,
+               error: r.error || null,
+               topOff: r.topOff ? [r.topOff.mp, r.topOff.intoRideMi] : null,
+               stops: (r.stops || []).map(x => [x.mp, Math.round(x.pos * 100) / 100,
+                                                x.arriveTankMi, !!x.topOff]),
+               tankAt: (r.tankAt || []).map(t => [t.mp, t.tankMi]),
+               notes: r.notes || [],
+               parkwayMi: r.parkwayMi, arriveWithMi: r.arriveWithMi,
+               planningRangeMi: r.planningRangeMi };
+    });
     return {
+      plans,
       xml: Gpx.exportRoute(day, 'BRP D1 parity'),
       track: Gpx.exportTrackOnly(day, 'BRP D1 parity'),
       nTotal: day.nTotal, nVia: day.nVia, nJunction: day.nJunctionPoints,
@@ -104,12 +129,23 @@ def main():
         return 0
     js = json.loads(raw.stdout.strip().splitlines()[-1])
 
-    from brp import gpx, junctions as J, mp as M, network as N, route as R, stops as S
+    from brp import access as A, gpx, junctions as J, mp as M, network as N, route as R, stops as S
     data = os.path.join(ROOT, "data")
     model, _ = M.load(data)
     net = N.load(model, data)
     jx = J.load(model, data)
-    fuel = {f["mp"]: f for f in S.build_fuel(model, net, json.load(open(f"{data}/fuel.json")))}
+    # The SAME fuel set the browser bundle carries, not just the 29 curated exits. Built
+    # the way build/derive.py builds it -- curated exits plus everything the Google
+    # verification sweep discovered. Planning against a different set of pumps than the
+    # page has is not a parity test, it is two different questions: the first run of this
+    # comparison "failed" on a homeward stop that was really Python choosing from 29
+    # candidates while the browser chose from 283.
+    raw_fuel = json.load(open(f"{data}/fuel.json"))
+    verification = S.load_verification(data)
+    if verification:
+        raw_fuel = raw_fuel + S.discovered_fuel(model, verification)
+    fuel_list = S.build_fuel(model, net, raw_fuel)
+    fuel = {f["mp"]: f for f in fuel_list}
     cgs = {c["name"]: c for c in
            S.build_campgrounds(model, net, json.load(open(f"{data}/campgrounds.json")))}
     pyday = R.build_day(model, net, jx, [
@@ -151,6 +187,35 @@ def main():
                  for a, b in zip(js["rtepts"], pypts)), default=0.0)
     check_true("route point coordinates agree within 2e-05 deg",
                drift <= 2e-5, f"worst {drift:.7f} deg")
+
+    print("the fuel planner, not just the export")
+    PLANS = [
+        ("one way", dict(waypoints=[0.0, 200.0], tank_mi=90, component=0)),
+        ("round trip", dict(waypoints=[291.8, 13.7, 291.8], tank_mi=200, component=0)),
+        ("buffered", dict(waypoints=[291.8, 13.7, 291.8], tank_mi=200, component=0,
+                          arrive_min_mi=25)),
+        ("no top-off", dict(waypoints=[0.0, 200.0], tank_mi=90, component=0,
+                            top_off=False)),
+    ]
+    for (label, kw), jsplan in zip(PLANS, js["plans"]):
+        wp = kw.pop("waypoints")
+        tank = kw.pop("tank_mi")
+        py = A.plan_journey(fuel_list, wp, tank, max_detour_mi=8, **kw)
+        check(f"{label}: plan succeeds the same way", jsplan["ok"], py["ok"])
+        check(f"{label}: same top-off",
+              jsplan["topOff"],
+              ([py["top_off"]["mp"], py["top_off"]["into_ride_mi"]]
+               if py.get("top_off") else None))
+        check(f"{label}: same stops, in the same places, arriving with the same fuel",
+              jsplan["stops"],
+              [[x["mp"], round(x["pos"], 2), x["arrive_tank_mi"], bool(x.get("top_off"))]
+               for x in py["stops"]])
+        check(f"{label}: same tank at every waypoint",
+              jsplan["tankAt"], [[t["mp"], t["tank_mi"]] for t in py["tank_at"]])
+        check(f"{label}: same advice, word for word", jsplan["notes"], py["notes"])
+        check(f"{label}: same distance and arrival",
+              [jsplan["parkwayMi"], jsplan["arriveWithMi"], jsplan["planningRangeMi"]],
+              [py["parkway_mi"], py["arrive_with_mi"], py["planning_range_mi"]])
 
     print("emitted GPX")
     # The browser bundle stores coordinates at 5 dp (~1.1 m) to keep the page small, so

@@ -491,8 +491,18 @@ button, .chip, [role="tab"] { user-select: none; -webkit-user-select: none; }
  * On a phone the map gets 42vh and the list gets what is left, which makes both cramped.
  * This gives the rider the whole screen for whichever one they are actually using.
  */
+/* Fixed to the viewport, not absolute inside #map.
+ *
+ * It used to live in the map's own box, and "Show the list" collapses that box to height
+ * zero -- Leaflet's container clips its overflow, so the button that was the only way back
+ * to the map was clipped out of existence along with it. One-way door.
+ *
+ * Fixed positioning is outside #app, so it does not inherit the shell's safe-area padding
+ * and has to clear the status bar itself. */
 #maptoggle {
-  position: absolute; z-index: 600; right: 10px; top: 10px;
+  position: fixed; z-index: 700;
+  right: calc(10px + env(safe-area-inset-right));
+  top: calc(10px + env(safe-area-inset-top));
   display: none; align-items: center; gap: 6px;
   min-height: var(--tap); padding: 0 14px;
   background: var(--panel); color: var(--fg);

@@ -526,8 +526,18 @@ button, .chip, [role="tab"] { user-select: none; -webkit-user-select: none; }
  * On a phone the map gets 42vh and the list gets what is left, which makes both cramped.
  * This gives the rider the whole screen for whichever one they are actually using.
  */
+/* Fixed to the viewport, not absolute inside #map.
+ *
+ * It used to live in the map's own box, and "Show the list" collapses that box to height
+ * zero -- Leaflet's container clips its overflow, so the button that was the only way back
+ * to the map was clipped out of existence along with it. One-way door.
+ *
+ * Fixed positioning is outside #app, so it does not inherit the shell's safe-area padding
+ * and has to clear the status bar itself. */
 #maptoggle {
-  position: absolute; z-index: 600; right: 10px; top: 10px;
+  position: fixed; z-index: 700;
+  right: calc(10px + env(safe-area-inset-right));
+  top: calc(10px + env(safe-area-inset-top));
   display: none; align-items: center; gap: 6px;
   min-height: var(--tap); padding: 0 14px;
   background: var(--panel); color: var(--fg);
@@ -1327,7 +1337,8 @@ const Access = (() => {
    */
   function planJourney(opts) {
     const { waypoints, tankMi, approachLegMi = 0, reserveFrac = 0, arriveMinMi = 0,
-            maxDetourMi = null, component = null, requireExitFuel = true } = opts;
+            maxDetourMi = null, component = null, requireExitFuel = true,
+            topOff = true } = opts;
     if (!(tankMi > 0)) return { ok: false, stops: [], notes: [], error: 'Set your tank range first.' };
     if (!waypoints || waypoints.length < 2) {
       return { ok: false, stops: [], notes: [],
@@ -1369,6 +1380,28 @@ const Access = (() => {
 
     let at = 0, remaining = planningRange;
     const stops = [], notes = [];
+
+    /* Top off before the Parkway starts counting.
+     *
+     * Everything below is exact arithmetic on a known tank. The one number it was never
+     * given is how much fuel the rider actually arrives with -- it assumed a full one at
+     * the access point, true if they happened to fill up on the way in and wrong every
+     * other time. So instead of assuming a full tank, the plan MAKES one: the first usable
+     * pump after joining becomes a top-off stop and the calculation starts there.
+     *
+     * Deliberately the first pump, not the furthest reachable. Greedy is the right rule
+     * once the tank is known; it is the wrong rule when it is not. */
+    let topOffStop = null;
+    if (topOff && marks.length) {
+      const first = marks[0];
+      // arriveWithMi is null on purpose: what is in the tank here is the one thing nobody
+      // has told us, and inventing it is what this stop exists to stop doing.
+      topOffStop = { ...first, topOff: true, arriveWithMi: null, arriveTankMi: null };
+      stops.push(topOffStop);
+      at = first.pos;
+      remaining = planningRange - first.detourMi;
+    }
+
     let guard = 0;
     while (targetPos - at > remaining) {
       if (++guard > 200) {
@@ -1411,6 +1444,13 @@ const Access = (() => {
       tankAt.push({ mp: wp, tankMi: Math.round((cur - (wpos - cursor) + buffer) * 10) / 10 });
     });
 
+    if (topOffStop) {
+      const where = topOffStop.town || topOffStop.road || 'the first pump';
+      notes.push(`Fill up at ${where} (MP ${topOffStop.mp}), ${topOffStop.pos.toFixed(0)} mi `
+               + `after you join. Everything after that is planned from a full tank; this is `
+               + `the one stretch that depends on what you arrive with.`);
+    }
+
     if (exit.mi != null && exit.stop) {
       notes.push(`Nearest fuel to where you leave the Parkway is `
                + `${exit.stop.town || 'the closest pump'} (MP ${exit.stop.mp}), about `
@@ -1418,6 +1458,11 @@ const Access = (() => {
     }
 
     return { ok: true, stops, notes, tankAt,
+             topOff: topOffStop
+               ? { mp: topOffStop.mp, town: topOffStop.town, road: topOffStop.road,
+                   intoRideMi: Math.round(topOffStop.pos * 10) / 10,
+                   detourMi: topOffStop.detourMi }
+               : null,
              // Where each waypoint falls along the journey line. The itinerary needs this
              // to place a fuel stop on the correct LEG: a round trip passes the same
              // milepost twice, and a stop at mile 378 of a 556 mile ride is on the way
@@ -1433,87 +1478,48 @@ const Access = (() => {
              totalMi: Math.round((journeyMi + approachLegMi) * 10) / 10 };
   }
 
+  /* Single-leg convenience wrapper over planJourney.
+   *
+   * This used to be a second implementation of the same greedy loop, exported and called
+   * by nothing. Two copies of subtle logic is how the browser port and the Python
+   * reference drift apart, which is the exact failure test_parity.py exists to catch --
+   * and it could not catch this one, because the duplicate was dead code. It now
+   * delegates, the way build/brp/access.py's plan_fuel does.
+   *
+   * The approach leg does NOT consume range. This dataset maps fuel at Parkway exits and
+   * nothing else, so it knows nothing about the stations between a rider's house and the
+   * Parkway -- and there are plenty. Charging a 136-mile approach against the tank
+   * reported "you cannot make it" for trips any rider completes by filling up on the way
+   * in. The approach produces advice; the Parkway calculation starts at the access point.
+   */
   function planFuel(opts) {
     const { accessMp, destMp, tankMi, approachLegMi = 0, reserveFrac = 0,
-            maxDetourMi = null, component = null, requireExitFuel = true } = opts;
-    // The approach does NOT consume range. This dataset maps fuel at Parkway exits and
-    // nothing else, so it knows nothing about the gas stations between a rider's house
-    // and the Parkway -- and there are plenty. Charging a 136-mile approach against the
-    // tank reported "you cannot make it" for trips any rider completes by filling up on
-    // the way in. The approach produces advice; the Parkway calculation starts full.
-    if (!(tankMi > 0)) return { ok: false, stops: [], error: 'Set your tank range first.' };
+            arriveMinMi = 0, maxDetourMi = null, component = null,
+            requireExitFuel = true, fullAtAccess = true, topOff = true } = opts;
+    if (!(tankMi > 0)) {
+      return { ok: false, stops: [], notes: [], error: 'Set your tank range first.' };
+    }
+    const planningRange = tankMi * (1 - reserveFrac) - Math.max(0, arriveMinMi);
+    const notes = [];
+    if (!fullAtAccess) notes.push('Planning as though you join the Parkway on a partial tank.');
 
-    const planningRange = tankMi * (1 - reserveFrac);
-    const forward = destMp >= accessMp;
-    const dir = forward ? 1 : -1;
-
-    const exits = BRP.data.fuel
-      .filter(f => usable(f, maxDetourMi))
-      .filter(f => component == null || f.component === component)
-      .filter(f => forward ? (f.mp >= accessMp && f.mp <= destMp)
-                           : (f.mp >= destMp && f.mp <= accessMp))
-      .map(f => ({ mp: f.mp, town: f.town, road: f.exit_road,
-                   detourMi: f.detour_plan_mi || 0, grade: f.plan_grade,
-                   confidence: f.confidence, warning: f.warning || f.closure_note || '',
-                   pos: dir * (f.mp - accessMp) }))
-      .sort((a, b) => a.pos - b.pos);
-
-    const destPos = Math.abs(destMp - accessMp);
-    // Plan as though the ride continues past camp to the nearest pump. Requiring that
-    // margin up front is what stops the planner delivering a rider to a campsite with an
-    // empty tank and no fuel for 18 miles in any direction.
-    const exit = requireExitFuel ? exitReserve(destMp, component, maxDetourMi)
-                                 : { mi: null, stop: null };
-    const targetPos = destPos + (exit.mi || 0);
-    let pos = 0, remaining = planningRange;
-    const stops = [], notes = [];
+    const result = planJourney({ waypoints: [accessMp, destMp], tankMi, approachLegMi,
+                                 reserveFrac, arriveMinMi, maxDetourMi, component,
+                                 requireExitFuel, topOff });
 
     if (approachLegMi > planningRange) {
       notes.push(`Your ride in is about ${approachLegMi.toFixed(0)} mi, longer than your `
-               + `${planningRange.toFixed(0)} mi range, so you will need fuel on the way. This `
-               + `planner only maps fuel at Parkway exits, so top up before you reach MP ${accessMp}.`);
-    } else if (approachLegMi > planningRange * 0.6) {
-      notes.push(`Your ride in is about ${approachLegMi.toFixed(0)} mi. Start the Parkway with a `
-               + `full tank — there is no fuel on it anywhere.`);
+               + `${planningRange.toFixed(0)} mi range, so you will need fuel on the way. `
+               + `This planner only maps fuel at Parkway exits, so top up before you reach `
+               + `MP ${accessMp}.`);
+    } else if (approachLegMi > planningRange * 0.6 && !result.topOff) {
+      // Only worth saying when the plan has NOT already found a pump to fill at. With a
+      // top-off in hand, "start the Parkway full" is advice the plan has superseded.
+      notes.push(`Your ride in is about ${approachLegMi.toFixed(0)} mi. Start the Parkway `
+               + `with a full tank — there is no fuel on it anywhere.`);
     }
-
-    let guard = 0;
-    while (targetPos - pos > remaining) {
-      if (++guard > 100) return { ok: false, stops, error: 'Could not converge on a fuel plan.' };
-      const reachable = exits.filter(e => e.pos > pos + 1e-9
-                                       && (e.pos - pos) + e.detourMi <= remaining);
-      if (!reachable.length) {
-        const ahead = exits.filter(e => e.pos > pos + 1e-9);
-        const nxt = ahead[0];
-        const need = nxt ? (nxt.pos - pos) + nxt.detourMi : targetPos - pos;
-        const where = nxt ? `MP ${nxt.mp} (${nxt.town})` : 'your destination';
-        return {
-          ok: false, stops,
-          error: `Out of range. You need about ${need.toFixed(0)} mi to reach ${where}, but `
-               + `you only have ${remaining.toFixed(0)} mi of planning range. Raise your tank `
-               + `range, accept a longer fuel detour, or carry fuel.`,
-          shortfallMi: Math.round((need - remaining) * 10) / 10
-        };
-      }
-      const stop = reachable.reduce((m, e) => (e.pos > m.pos ? e : m));
-      stops.push({ ...stop,
-                   arriveWithMi: Math.round((remaining - (stop.pos - pos) - stop.detourMi) * 10) / 10 });
-      pos = stop.pos;
-      remaining = planningRange - stop.detourMi;   // full tank, minus the ride back out
-    }
-
-    if (exit.mi != null) {
-      notes.push(`Nearest fuel to camp is ${exit.stop.town || 'the closest pump'} `
-               + `(MP ${exit.stop.mp}), about ${exit.mi.toFixed(0)} mi away. The plan keeps that `
-               + `much in the tank so you can get back out.`);
-    }
-    return { ok: true, stops, notes, exitReserveMi: exit.mi,
-             exitReserveStop: exit.stop ? { mp: exit.stop.mp, town: exit.stop.town } : null,
-             arriveWithMi: Math.round((remaining - (destPos - pos)) * 10) / 10,
-             planningRangeMi: Math.round(planningRange * 10) / 10,
-             parkwayMi: Math.round(destPos * 10) / 10,
-             approachMi: Math.round(approachLegMi * 10) / 10,
-             totalMi: Math.round((destPos + approachLegMi) * 10) / 10 };
+    result.notes = notes.concat(result.notes || []);
+    return result;
   }
 
   return { ROAD_FACTOR, approachMi, accessPoints, bestAccessPoints, bestExitPoints,
@@ -3166,14 +3172,25 @@ const LEGEND_FOOTER =
       // "2 fuel stops on the way" is technically true of a round trip and reads as two
       // stops on the outbound leg. Split it, so the count matches what the list shows.
       const lastStay = (f.waypointPos || [])[state.stops.length];
+      // The top-off is counted separately. It is not a stop the tank forced -- it is the
+      // stop that makes the rest of the arithmetic true, and lumping it in inflates the
+      // count a rider uses to judge how broken up their day is.
+      const forced = f.stops.filter(x => !x.topOff);
       const home = lastStay == null ? 0
-        : f.stops.filter(x => x.pos > lastStay + 1e-6).length;
-      const out = f.stops.length - home;
-      fuelLine = home && out
-        ? `${f.stops.length} fuel stops — ${out} on the way out, ${home} on the way home.`
+        : forced.filter(x => x.pos > lastStay + 1e-6).length;
+      const out = forced.length - home;
+      const fill = f.topOff
+        ? `Top off at ${f.topOff.town || f.topOff.road} (MP ${f.topOff.mp})`
+          + (f.topOff.intoRideMi >= 0.5 ? `, ${Math.round(f.topOff.intoRideMi)} mi in` : ``)
+          + `. `
+        : ``;
+      fuelLine = fill + (
+        !forced.length ? `No further fuel stop needed.`
+        : home && out
+        ? `Then ${forced.length} fuel stops — ${out} on the way out, ${home} on the way home.`
         : home
-        ? `${home} fuel stop${home > 1 ? 's' : ''} on the way home.`
-        : `${out} fuel stop${out > 1 ? 's' : ''} on the way.`;
+        ? `Then ${home} fuel stop${home > 1 ? 's' : ''} on the way home.`
+        : `Then ${out} fuel stop${out > 1 ? 's' : ''} on the way.`);
     } else if (thin) {
       fuelLine = `It fits on one tank, but only just — you arrive with about `
                + `${f.arriveWithMi} mi left. Fill up before MP ${c.mp}, or raise how far `
@@ -3251,17 +3268,22 @@ const LEGEND_FOOTER =
         // just typed. So this fires only below the buffer -- or below 10 mi when they
         // have set no buffer at all, which is the case the buffer exists to prevent.
         const floor = Math.max(10, f.arriveMinMi || 0);
-        const tight = stop.arriveTankMi < floor - 0.05;
+        // The top-off has no arrival figure and must not pretend to: what is in the tank
+        // when the rider reaches the FIRST pump is the one number nobody has told us, and
+        // saying "about null mi in the tank" is how a placeholder ships.
+        const tight = !stop.topOff && stop.arriveTankMi < floor - 0.05;
         const homeward = stop.pos > lastStayPos + 1e-6;
         const detail = [
           homeward ? 'On the way home' : null,
           stop.detourMi ? `${stop.detourMi} mi off the Parkway` : 'right at the exit',
-          tight ? `cutting it fine — you arrive with about ${stop.arriveTankMi} mi in the tank`
-                : `about ${stop.arriveTankMi} mi in the tank on arrival`
+          stop.topOff
+            ? 'fill up here — everything after this is planned from a full tank'
+            : tight ? `cutting it fine — you arrive with about ${stop.arriveTankMi} mi in the tank`
+                    : `about ${stop.arriveTankMi} mi in the tank on arrival`
         ].filter(Boolean).join(' \u00b7 ');
         events.push({ pos: stop.pos, order: 2, row: () => stepRow(
           `MP ${stop.mp}`,
-          `Fuel — ${fuelLabel(stop)}`,
+          stop.topOff ? `Top off — ${fuelLabel(stop)}` : `Fuel — ${fuelLabel(stop)}`,
           detail, (tight || stop.grade === 'unconfirmed') ? 'alert' : 'fuel') });
       });
     }

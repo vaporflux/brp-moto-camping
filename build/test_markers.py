@@ -300,8 +300,29 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
             scroll: document.documentElement.scrollHeight - window.innerHeight });
     }, 500));
   }, INSET);
+  // The map/list swap has to work in BOTH directions. "Show the list" collapses the map
+  // pane to height zero, and the button used to live inside it -- clipped away with it,
+  // leaving no way back to the map at all.
+  const swap = await p.evaluate(() => {
+    const app = document.querySelector('#app');
+    app.classList.remove('map-full');
+    const btn = document.querySelector('#maptoggle');
+    btn.click();                                    // -> full map
+    const mapFull = app.className;
+    btn.click();                                    // -> list
+    return new Promise(res => setTimeout(() => {
+      const b = document.querySelector('#maptoggle');
+      const r = b.getBoundingClientRect();
+      const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      res({ mapFull, listFull: app.className,
+            visible: r.width > 0 && r.height > 0,
+            onTop: !!(mid && mid.closest('#maptoggle')),
+            label: b.textContent });
+    }, 400));
+  });
   await p.evaluate(() => {
-    document.querySelector('#app').classList.remove('map-full');
+    const app = document.querySelector('#app');
+    app.classList.remove('map-full', 'list-full');
     [...document.querySelectorAll('style')].pop().remove();
   });
   await p.setViewportSize({ width: 1280, height: 900 });
@@ -318,7 +339,7 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   }));
 
   console.log(JSON.stringify({ wide, grey, named, fuelFills, stuck, sel, toggle,
-                               gpsOff, gps, panned, stopped, safeArea, key, errors }));
+                               gpsOff, gps, panned, stopped, safeArea, swap, key, errors }));
   await b.close();
 })();
 """
@@ -485,6 +506,15 @@ def main():
     check("and the inset does not push the shell off the bottom of the screen",
           sa["appBottom"] <= sa["viewport"] + 1 and sa["scroll"] <= 1,
           json.dumps({k: sa[k] for k in ("appBottom", "viewport", "scroll")}))
+
+    print("\nthe map/list swap is not a one-way door")
+    sw = js["swap"]
+    check("showing the full map works", "map-full" in sw["mapFull"], sw["mapFull"])
+    check("showing the list works", "list-full" in sw["listFull"], sw["listFull"])
+    check("the way back to the map still has a size", sw["visible"], json.dumps(sw))
+    check("and is actually on top, not clipped by the collapsed map pane", sw["onTop"],
+          json.dumps(sw))
+    check("and it offers the map", "map" in sw["label"].lower(), sw["label"])
 
     check("the page raised no errors", not js["errors"], str(js["errors"][:3]))
 

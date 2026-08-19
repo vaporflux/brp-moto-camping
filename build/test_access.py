@@ -87,14 +87,25 @@ def main():
     except ValueError:
         check("a destination inside a closure is rejected", True)
 
+    # Every plan now opens with a top-off at the first pump past the access point, so the
+    # tank the rest of the arithmetic runs on is one we filled rather than one we assumed.
+    # Counting "stops the tank forced" means counting the ones after it.
+    def forced(plan):
+        return [x for x in plan["stops"] if not x.get("top_off")]
+
     print("fuel planning scales with the bike, not a hardcoded GSA")
     runs = {t: A.plan_fuel(fuel, 382.5, 469.1, t, approach_leg_mi=40, component=2,
                            max_detour_mi=8) for t in (300, 200, 120, 80)}
     check("all four tanks produce a workable plan", all(r["ok"] for r in runs.values()))
-    counts = [len(runs[t]["stops"]) for t in (300, 200, 120, 80)]
+    counts = [len(forced(runs[t])) for t in (300, 200, 120, 80)]
     check("a smaller tank never needs fewer stops", counts == sorted(counts), str(counts))
-    check("a 300 mi tank needs no stop on an 87 mi run", counts[0] == 0)
+    check("a 300 mi tank needs no stop beyond the top-off on an 87 mi run", counts[0] == 0)
     check("an 80 mi tank does need stops", counts[-1] >= 1)
+    check("every plan opens by filling the tank rather than assuming one",
+          all(r["stops"] and r["stops"][0].get("top_off") for r in runs.values()))
+    check("and the top-off is the first pump passed, not the furthest reachable",
+          all(r["stops"][0]["pos"] == min(x["pos"] for x in r["stops"])
+              for r in runs.values()))
     # No abstract safety percentage by default: "miles on a tank" is already a rider's
     # conservative real-world figure, and the exit-fuel rule below provides a concrete
     # margin -- enough range at camp to reach the next pump -- which is worth more than a
@@ -138,10 +149,11 @@ def main():
     guarded = A.plan_fuel(fuel, 382.5, 408.6, 32, component=2, max_detour_mi=8)
     check("without the rule, a just-barely tank looks fine", bare["ok"])
     check("with the rule, the same tank is caught",
-          not guarded["ok"] or len(guarded["stops"]) > len(bare["stops"]),
+          not guarded["ok"] or len(forced(guarded)) > len(forced(bare)),
           f"bare {bare['ok']}/{len(bare['stops'])} guarded {guarded['ok']}/{len(guarded['stops'])}")
     roomy = A.plan_fuel(fuel, 382.5, 408.6, 200, component=2, max_detour_mi=8)
-    check("a roomy tank still needs no stop", roomy["ok"] and not roomy["stops"])
+    check("a roomy tank needs no stop beyond the top-off",
+          roomy["ok"] and not forced(roomy))
     check("the plan says what the withheld range is for",
           any("keeps that much in the tank" in n for n in roomy["notes"]),
           str(roomy["notes"]))
@@ -223,16 +235,22 @@ def main():
     bare = A.plan_journey(fuel, wp, tank_mi=200, max_detour_mi=8, component=0)
     # Not pinned to an exact figure: the fuel set grows as verification runs, and the
     # claim is about the shape of greedy planning, not about one number.
+    # The top-off carries no arrival figure at all -- what is in the tank when the rider
+    # rolls up to it is the one thing nobody has told us, and inventing a number there is
+    # what the top-off exists to stop doing.
+    check("the top-off does not claim to know what you arrive with",
+          bare["stops"][0].get("top_off")
+          and bare["stops"][0]["arrive_tank_mi"] is None)
     check("with no buffer, a stop is reached on less than the default 10 mi",
-          min(s["arrive_tank_mi"] for s in bare["stops"]) < 10,
-          str(min(s["arrive_tank_mi"] for s in bare["stops"])))
+          min(s["arrive_tank_mi"] for s in forced(bare)) < 10,
+          str(min(s["arrive_tank_mi"] for s in forced(bare))))
 
     for want in (10, 25, 50):
         got = A.plan_journey(fuel, wp, tank_mi=200, max_detour_mi=8, component=0,
                              arrive_min_mi=want)
         check(f"a {want} mi buffer is honoured at every stop",
-              got["ok"] and all(s["arrive_tank_mi"] >= want - 0.05 for s in got["stops"]),
-              str([s["arrive_tank_mi"] for s in got["stops"]]))
+              got["ok"] and all(s["arrive_tank_mi"] >= want - 0.05 for s in forced(got)),
+              str([s["arrive_tank_mi"] for s in forced(got)]))
 
     ten = A.plan_journey(fuel, wp, tank_mi=200, max_detour_mi=8, component=0,
                          arrive_min_mi=10)
@@ -266,8 +284,11 @@ def main():
     camp_pos = rt["waypoint_pos"][1]
     outbound = [s for s in rt["stops"] if s["pos"] <= camp_pos]
     homeward = [s for s in rt["stops"] if s["pos"] > camp_pos]
-    check("one fuel stop is on the way out", len(outbound) == 1, str(len(outbound)))
+    check("the top-off and one fuel stop are on the way out", len(outbound) == 2,
+          str([round(x["pos"], 1) for x in outbound]))
+    check("the top-off is the first of them", outbound[0].get("top_off"))
     check("and one is on the way home", len(homeward) == 1, str(len(homeward)))
+    outbound = [x for x in outbound if not x.get("top_off")]
     # Same milepost region, 193 miles apart in riding. Ordering by milepost would put them
     # side by side; ordering by journey position keeps them where they happen.
     check("they are far apart in riding, not in milepost",
@@ -278,14 +299,30 @@ def main():
           str(rt["tank_at"]))
 
     print("greedy picks the furthest reachable pump")
-    if plan["ok"] and plan["stops"]:
-        first = plan["stops"][0]
+    # Greedy is the right rule once the tank is a known quantity, which is true from the
+    # top-off onward and not before it. So the claim is about the leg AFTER the top-off:
+    # from there, on a full tank, nothing reachable should have been ridden past.
+    forced_stops = [x for x in plan["stops"] if not x.get("top_off")]
+    if plan["ok"] and forced_stops and plan["stops"][0].get("top_off"):
+        start = plan["stops"][0]
+        first = forced_stops[0]
+        range_from_start = plan["planning_range_mi"] - start["detour_mi"]
         skipped = [f for f in fuel
                    if A._usable(f, 8) and f.get("component") == 0
                    and first["mp"] < f["mp"] <= 200.0
-                   and (f["mp"] - 0.0) + (f.get("detour_plan_mi") or 0) <= plan["planning_range_mi"]]
-        check("no reachable pump was passed by on the first leg", not skipped,
+                   and (f["mp"] - start["mp"]) + (f.get("detour_plan_mi") or 0)
+                       <= range_from_start]
+        check("no reachable pump was passed by on the leg after the top-off", not skipped,
               str([f["mp"] for f in skipped]))
+    check("the top-off is the nearest pump, not the furthest reachable",
+          plan["stops"][0].get("top_off")
+          and plan["stops"][0]["pos"] == min(x["pos"] for x in plan["stops"]),
+          str([round(x["pos"], 1) for x in plan["stops"][:3]]))
+    # Turning it off restores the old assume-a-full-tank behaviour, which is what the
+    # exported GPX and any caller that wants raw greedy still get.
+    without = A.plan_fuel(fuel, 0.0, 200.0, 90, component=0, max_detour_mi=8, top_off=False)
+    check("it can be switched off", without["ok"] and not without.get("top_off")
+          and not any(x.get("top_off") for x in without["stops"]))
 
     print()
     if FAILURES:
