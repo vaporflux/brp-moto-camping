@@ -5,35 +5,54 @@
  * variant for bright sun, which is the actual condition this gets used in.
  */
 :root {
-  --ink: #12160f; --panel: #1b2118; --panel-2: #232b1e; --line: #3a4530;
-  --fg: #eef0e8; --dim: #a9b39c; --faint: #78826c;
-  --amber: #e0a33e; --moss: #7fa35c; --rust: #c8552f; --sky: #5b93b8;
-  --danger: #e05c3e; --warn: #e0a33e; --ok: #7fa35c;
+  /* BRAND.md. Names in comments are the brand's, so a token can be traced back to it. */
+  --ink: #0e1a22;              /* Night Blue   — deepest surface */
+  --panel: #16344a;            /* Deep Blue    — page and panel backgrounds */
+  --panel-2: #1e3d4f;          /* Panel Blue   — raised panel, hover */
+  --line: #2d5468;             /* Line Blue    — borders and dividers */
+  --ridge: #1d4159;            /* Ridge Blue   — icon tile, primary brand colour */
+  --fg: #f2efe6;               /* Cream        — the mark, primary text */
+  --dim: #9fb6c4;              /* Slate        — secondary text */
+  --faint: #8ea3ae;            /* Stone        — muted text and markers */
+  --amber: #f0b44a;            /* Headlight Amber */
+  --moss: #6fc08a;             /* Trail Green */
+  --rust: #e0623a;             /* Clay Red */
+  --sky: #7fd3f5;              /* Sky */
+  --danger: #e0623a; --warn: #f0b44a; --ok: #6fc08a;
+  /* Readable text ON amber and ON sky. Cream fails against both; Deep Blue clears AA. */
+  --on-accent: #16344a;
+  --off: #5b7280;              /* unreachable / switched-off markers */
   --radius: 10px; --radius-sm: 6px;
   --tap: 44px;                 /* minimum touch target */
   --sidebar-w: 400px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --map-bg: #0d1109;
-  --shadow: 0 6px 24px rgba(0,0,0,.4);
+  --map-bg: #0e1a22;           /* Night Blue — the map canvas */
+  --shadow: 0 6px 24px rgba(0,0,0,.45);
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --ink: #f2f2ec; --panel: #fbfbf7; --panel-2: #eceade; --line: #d3d1c0;
-    --fg: #1c2117; --dim: #5c6553; --faint: #838b78;
-    --amber: #a9741a; --moss: #4d6d33; --rust: #a63f1c; --sky: #2f6d94;
-    --danger: #b3341a; --warn: #8a5d10; --ok: #3f6b2a;
-    --map-bg: #e6e6dc;
-    --shadow: 0 6px 24px rgba(0,0,0,.14);
+    --ink: #e7e2d4; --panel: #f2efe6; --panel-2: #ddd6c6; --line: #c3bcaa;
+    --ridge: #1d4159;
+    --fg: #16344a; --dim: #4a677c; --faint: #6d8492;
+    --amber: #9a6a12; --moss: #2f7a4c; --rust: #a83c1c; --sky: #1f6b8c;
+    --danger: #a83c1c; --warn: #9a6a12; --ok: #2f7a4c;
+    --on-accent: #f2efe6;
+    --off: #7e909b;
+    --map-bg: #e7e2d4;
+    --shadow: 0 6px 24px rgba(14,26,34,.16);
   }
 }
 :root[data-theme="light"] {
-  --ink: #f2f2ec; --panel: #fbfbf7; --panel-2: #eceade; --line: #d3d1c0;
-  --fg: #1c2117; --dim: #5c6553; --faint: #838b78;
-  --amber: #a9741a; --moss: #4d6d33; --rust: #a63f1c; --sky: #2f6d94;
-  --danger: #b3341a; --warn: #8a5d10; --ok: #3f6b2a;
-  --map-bg: #e6e6dc;
-  --shadow: 0 6px 24px rgba(0,0,0,.14);
+  --ink: #e7e2d4; --panel: #f2efe6; --panel-2: #ddd6c6; --line: #c3bcaa;
+  --ridge: #1d4159;
+  --fg: #16344a; --dim: #4a677c; --faint: #6d8492;
+  --amber: #9a6a12; --moss: #2f7a4c; --rust: #a83c1c; --sky: #1f6b8c;
+  --danger: #a83c1c; --warn: #9a6a12; --ok: #2f7a4c;
+  --on-accent: #f2efe6;
+  --off: #7e909b;
+  --map-bg: #e7e2d4;
+  --shadow: 0 6px 24px rgba(14,26,34,.16);
 }
 
 * { box-sizing: border-box; }
@@ -94,7 +113,7 @@ header h1 span { color: var(--amber); }
   font-size: 13px; font-weight: 600; width: 100%;
 }
 .btn:hover { border-color: var(--moss); }
-.btn.primary { background: var(--amber); border-color: var(--amber); color: #1a1405; }
+.btn.primary { background: var(--amber); border-color: var(--amber); color: var(--on-accent); }
 .btn.ghost { background: transparent; font-weight: 500; }
 .btn.sm { min-height: 34px; padding: 6px 10px; font-size: 12px; width: auto; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -184,7 +203,12 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
 /* ---- map bits ------------------------------------------------------------- */
 .leaflet-container { background: var(--map-bg); font-family: var(--font); }
 .pin {
-  border-radius: 50%; border: 2px solid var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.5);
+  border-radius: 50%;
+  /* A ring in the MAP's colour, not the page's. Night Blue against the dark basemap read
+     as a black blob around every pin once the palette went blue; the map canvas colour
+     separates a pin from its neighbours without drawing a halo. */
+  border: 2px solid var(--map-bg);
+  box-shadow: 0 1px 3px rgba(14,26,34,.55);
 }
 .leaflet-popup-content-wrapper {
   background: var(--panel); color: var(--fg); border-radius: var(--radius);
