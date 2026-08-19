@@ -4,17 +4,34 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
-<meta name="description" content="Blue Ridge Parkway motorcycle trip planner — campgrounds, fuel, closures, and Garmin-safe GPX export. Works offline.">
-<title>Blue Ridge Parkway — Trip Planner</title>
-<link rel="manifest" href="/manifest.webmanifest">
+<meta name="description" content="Plan a Blue Ridge Parkway motorcycle trip: campgrounds, fuel, current closures, and Garmin-safe GPX. Works with no signal.">
+<title>Blue Ridge Parkway — Moto Camping</title>
+
+<!-- Icons. The .ico is first and unsized so old browsers stop there; modern ones prefer
+     the SVG, which stays sharp at any tab size. -->
+<link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0e1a22">
+
+<!-- iOS home screen -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Blue Ridge">
+<meta name="apple-mobile-web-app-title" content="BRP Camp">
 <meta name="mobile-web-app-capable" content="yes">
+
+<!-- Link preview card. No campground count anywhere in here: the number moves every time
+     a data script runs, and a card cached by iMessage or Slack does not. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Blue Ridge Parkway — Moto Camping">
+<meta property="og:description" content="Campgrounds, fuel and current closures, MP 0–469. Plans your riding days and exports Garmin-safe GPX.">
+<meta property="og:image" content="https://brp-moto-camping.vercel.app/icons/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://brp-moto-camping.vercel.app/">
+<meta name="twitter:card" content="summary_large_image">
 <style>__LEAFLET_CSS__</style>
 <style>__APP_CSS__</style>
 </head>
@@ -24,7 +41,7 @@
     <header>
       <span class="mark" aria-hidden="true">__MARK_SVG__</span>
       <div style="flex:1;min-width:0">
-        <h1>Blue Ridge <span>Trip Planner</span></h1>
+        <h1>Blue Ridge Parkway <span>Moto Camping</span></h1>
         <div class="asof" id="asof"></div>
       </div>
     </header>
