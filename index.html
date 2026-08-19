@@ -1410,7 +1410,7 @@ const Geocode = (() => {
  * Results are CACHED in the trip, deliberately. Routing needs signal and riding does not,
  * so a trip planned at home keeps its real geometry and turn list in a gap. That is also
  * why the cache is keyed on rounded coordinates: a jiggle of a few metres should reuse the
- * answer rather than spend another billable request.
+ * answer rather than ask for the same route twice.
  */
 const Directions = (() => {
   const cache = new Map();
@@ -2525,10 +2525,11 @@ const Gpx = (() => {
    * route". One circle cannot cover 469 miles, so it walks the rideable Parkway in steps
    * and merges the results.
    *
-   * That means several billable requests per press, so the count is stated up front and
-   * the step is sized from the rider's own distance filter: a wider filter needs fewer,
-   * larger circles. Results are session-only -- Google's terms restrict retaining Places
-   * content, so nothing is written to localStorage or the bundle.
+   * The step is sized from the rider's own distance filter -- a wider filter needs fewer,
+   * larger circles -- and the step count is shown because it is what makes the press take
+   * a few seconds rather than being instant. Results are session-only: Google's terms
+   * restrict retaining Places content, so nothing is written to localStorage or the
+   * bundle.
    */
   const knownGoogleIds = () =>
     new Set((D.places || []).map(c => c.google_id).filter(Boolean));
@@ -2559,8 +2560,7 @@ const Gpx = (() => {
     const hint = el('div', 'tiny');
     hint.style.marginTop = '4px';
     hint.textContent = `Walks the Parkway end to end in ${samples.length} steps, `
-                     + `${withinMi} mi either side. That is ${samples.length} Google `
-                     + `searches — they are billed per request.`;
+                     + `${withinMi} mi either side.`;
     wrap.append(hint);
 
     btn.onclick = async () => {
@@ -2637,8 +2637,8 @@ const Gpx = (() => {
    *
    * Stepped at about 1.5x the search radius so the circles overlap rather than leaving
    * gaps between them, and capped so one press cannot fire an unbounded number of
-   * billable requests. Only open segments -- searching a closed stretch spends money to
-   * find hotels nobody can ride to.
+   * requests. Only open segments: searching a closed stretch would return hotels nobody
+   * can ride to.
    */
   function parkwaySamples(radiusMi, maxSamples = 22) {
     const stepMi = Math.max(8, radiusMi * 1.5);

@@ -727,7 +727,7 @@ const Geocode = (() => {
  * Results are CACHED in the trip, deliberately. Routing needs signal and riding does not,
  * so a trip planned at home keeps its real geometry and turn list in a gap. That is also
  * why the cache is keyed on rounded coordinates: a jiggle of a few metres should reuse the
- * answer rather than spend another billable request.
+ * answer rather than ask for the same route twice.
  */
 const Directions = (() => {
   const cache = new Map();
