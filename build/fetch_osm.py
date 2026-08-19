@@ -10,7 +10,7 @@ redistribution as long as OpenStreetMap is credited (the page does, in the map a
 and the Notes tab).
 
 This is the offline tier. Google Places fills gaps live, on demand, through api/places.js
-when there IS signal -- see v2/README.md.
+when there IS signal -- see app/README.md.
 
 NOTE: this script could not be exercised where it was written. `overpass-api.de` is blocked
 by that environment's egress policy, so the query below is unverified against a live
@@ -173,7 +173,7 @@ def main():
     print(f"  showers tagged yes: {with_showers}   not tagged at all: {unknown_showers}")
     print("\nOSM amenity tagging is patchy. 'Not tagged' is not the same as 'no showers',")
     print("and the planner shows those as unknown rather than filtering them away.")
-    print("\nNext: python3 build/derive.py && python3 build/build_v2.py")
+    print("\nNext: python3 build/derive.py && python3 build/build_app.py")
 
 
 if __name__ == "__main__":

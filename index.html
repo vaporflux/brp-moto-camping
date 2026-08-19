@@ -725,14 +725,56 @@ const Router = (() => {
   function splitDay(stops, spacingMi = DEFAULT_SPACING_MI) {
     const day = buildDay(stops, spacingMi);
     if (fitsBudget(day)) return [day];
-    if (stops.length < 3) {
-      throw new RouteError(
-        `Cannot split: ${day.nTotal} points between two stops. Add an intermediate stop ` +
-        `or shorten the day.`);
+    if (stops.length >= 3) {
+      const mid = Math.floor(stops.length / 2);
+      return [...splitDay(stops.slice(0, mid + 1), spacingMi),
+              ...splitDay(stops.slice(mid), spacingMi)];
     }
-    const mid = Math.floor(stops.length / 2);
-    return [...splitDay(stops.slice(0, mid + 1), spacingMi),
-            ...splitDay(stops.slice(mid), spacingMi)];
+    // Two stops and over budget. Splitting by stop is impossible, but refusing to export
+    // is worse: a long ride between two points is a perfectly reasonable thing to plan,
+    // and SPEC 5.4 asks for more routes rather than thinner shaping. So chunk the points
+    // themselves.
+    return splitByPoints(day);
+  }
+
+  /* Chunk an over-budget day into consecutive routes that each fit.
+   *
+   * Each chunk repeats the previous chunk's last point as its own first point, so the
+   * routes join end to end on the device instead of leaving a gap between files. The
+   * track is divided at the same mileposts.
+   */
+  function splitByPoints(day) {
+    const perRoute = Math.max(2, profile.total - 1);   // -1 for the repeated join point
+    const chunks = [];
+    for (let i = 0; i < day.rtepts.length - 1; i += perRoute - 1) {
+      chunks.push(day.rtepts.slice(i, i + perRoute));
+    }
+    return chunks.map((rtepts, idx) => {
+      const first = rtepts[0], last = rtepts[rtepts.length - 1];
+      const lo = Math.min(first.mp ?? Infinity, last.mp ?? Infinity);
+      const hi = Math.max(first.mp ?? -Infinity, last.mp ?? -Infinity);
+      const track = Number.isFinite(lo) && Number.isFinite(hi)
+        ? day.track.filter(pt => {
+            const near = BRP.nearestVertex(pt[0], pt[1]);
+            return near.mp >= lo - 0.5 && near.mp <= hi + 0.5;
+          })
+        : day.track;
+      let maxSpan = 0;
+      for (let i = 0; i < rtepts.length - 1; i++) {
+        if (rtepts[i].mp != null && rtepts[i + 1].mp != null) {
+          maxSpan = Math.max(maxSpan, Math.abs(rtepts[i + 1].mp - rtepts[i].mp));
+        }
+      }
+      return {
+        ...day, rtepts, track: thinTrack(track),
+        nTotal: rtepts.length,
+        nVia: rtepts.filter(p => p.type === 'via').length,
+        nJunctionPoints: rtepts.filter(p => p.junction).length,
+        maxUnprotectedSpanMi: Math.round(maxSpan * 100) / 100,
+        partIndex: idx, partCount: chunks.length,
+        warnings: idx === 0 ? day.warnings : []
+      };
+    });
   }
 
   /* Fuel gaps across the WHOLE trip, not per day.

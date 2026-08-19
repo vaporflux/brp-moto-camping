@@ -1,11 +1,11 @@
 # v2 — the trip planner
 
 **This is what deploys.** The repo-root `index.html` is **generated** from this folder.
-Edit the files in `v2/src/`, then rebuild:
+Edit the files in `app/src/`, then rebuild:
 
 ```
 python3 build/derive.py     # only when data/ changes — rebuilds the data bundle
-python3 build/build_v2.py   # inlines src/ + vendor/ + data -> /index.html
+python3 build/build_app.py   # inlines src/ + vendor/ + data -> /index.html
 ```
 
 There is deliberately no second copy of the built page under `v2/`. Two generated
@@ -104,7 +104,7 @@ Run the OSM pull once and it is baked in forever:
 
 ```
 python3 build/fetch_osm.py --radius 25   # -> data/osm_places.json
-python3 build/derive.py && python3 build/build_v2.py
+python3 build/derive.py && python3 build/build_app.py
 ```
 
 The app works before you ever run it — `places.py` handles a missing OSM file, and step 2
@@ -199,10 +199,10 @@ account.
 
 ## Deploy
 
-Push to `main`. Vercel serves the repo-root `index.html`, which `build/build_v2.py`
+Push to `main`. Vercel serves the repo-root `index.html`, which `build/build_app.py`
 generates from this folder — no build step runs on Vercel, so **the rebuilt `index.html`
-has to be committed** alongside any `v2/src/` change. If you edit source and forget to
+has to be committed** alongside any `app/src/` change. If you edit source and forget to
 rebuild, the site will not change.
 
 `v1/index.html` is untouched and still reachable at `/v1/` as a fallback. Nothing in the
-build depends on it any more — Leaflet now lives in `v2/vendor/`.
+build depends on it any more — Leaflet now lives in `app/vendor/`.
