@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 48" role="img" aria-label="Blue Ridge Trip Planner">
+  <g transform="translate(0 2) scale(0.6875)">
+    <rect width="64" height="64" rx="14" fill="#1b2118"/>
+      <!-- 3/4 helmet: crown plus side pillars, so it frames a face instead of sitting on it -->
+      <path d="M32 6c-11 0-19.5 8.2-19.5 18.5V38h7.2V25.5c0-7.2 5.4-12.8 12.3-12.8s12.3 5.6 12.3 12.8V38h7.2V24.5C51.5 14.2 43 6 32 6z" fill="#5b93b8"/>
+      <rect x="9" y="23" width="46" height="4.8" rx="2.4" fill="#3f6a88"/>
+      <!-- goggles, sitting on the brim -->
+      <circle cx="24" cy="32" r="5.9" fill="#12160f"/>
+      <circle cx="40" cy="32" r="5.9" fill="#12160f"/>
+      <rect x="29.4" y="30.7" width="5.2" height="2.6" rx="1.3" fill="#12160f"/>
+      <circle cx="24" cy="32" r="3.3" fill="#eef0e8" opacity=".9"/>
+      <circle cx="40" cy="32" r="3.3" fill="#eef0e8" opacity=".9"/>
+      <!-- the beard IS the ridgeline: full face width, three summits -->
+      <path d="M17.4 36.6h29.2v9.8l-5.9 10.6-4.7-8.4-4 6.6-4-6.6-4.7 8.4-5.9-10.6z" fill="#e0a33e"/>
+      <!-- moustache, so the beard reads as attached to the face rather than hanging under it -->
+      <rect x="26.6" y="34.4" width="10.8" height="3.4" rx="1.7" fill="#e0a33e"/>
+  </g>
+  <text x="56" y="23" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif"
+        font-size="17" font-weight="700" letter-spacing="0.5" fill="#eef0e8">BLUE RIDGE</text>
+  <text x="56" y="39" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif"
+        font-size="12.5" font-weight="600" letter-spacing="2.6" fill="#e0a33e">TRIP PLANNER</text>
+</svg>

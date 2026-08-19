@@ -35,6 +35,18 @@
     filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
     search: '',
     showClosed: true,
+    browseKind: 'all',         // Browse filters are independent of the trip being planned
+    browseShowers: false,
+    browseToilets: false,
+    browseWithinMi: 15,
+    browseGoogle: null,
+    browseNote: null,
+    // Open on a desktop, where there is room beside the map; collapsed on a phone, where
+    // an open key covers the whole 42vh map pane and hides the thing it is explaining.
+    // Either way the rider's own choice is remembered from then on.
+    legendOpen: typeof window !== 'undefined' && window.innerWidth > 860,
+    pinMode: false,            // map taps only place a pin when the rider asks for it
+    mapView: 'split',          // phone only: split | map | list
     checklist: {},
     device: 'xt2'
   };
@@ -49,6 +61,14 @@
         start: state.start, accessMp: state.accessMp,
         finish: state.finish, endPoint: state.endPoint,
         stayWithinMi: state.stayWithinMi,
+        // Display preferences, so the app stops re-teaching the rider what it already told
+        // them. pinMode is deliberately NOT saved: a pending map tap should not survive a
+        // reload and hijack the next touch.
+        legendOpen: state.legendOpen, filters: state.filters,
+        browseKind: state.browseKind, browseWithinMi: state.browseWithinMi,
+        browseShowers: state.browseShowers, browseToilets: state.browseToilets,
+        stayKind: state.stayKind, stayShowers: state.stayShowers,
+        stayToilets: state.stayToilets,
         // Cached road geometry rides along with the trip. Routing needs signal; riding
         // does not, so a trip planned at home keeps its real roads in a dead zone.
         roads: Directions.dump()
@@ -461,6 +481,9 @@
 
     const alt = el('div', 'btn-row');
     alt.style.marginTop = '8px';
+    const pin = el('button', `btn sm ${state.pinMode ? 'primary' : 'ghost'}`,
+                   state.pinMode ? 'Now tap the map\u2026' : 'Drop a pin on the map');
+    pin.onclick = () => { state.pinMode = !state.pinMode; render(); };
     const here = el('button', 'btn sm ghost', 'Use my location');
     here.onclick = () => {
       if (!navigator.geolocation) { status.textContent = 'This browser has no location access.'; return; }
@@ -471,9 +494,164 @@
         () => { status.textContent = 'Location denied or unavailable.'; },
         { timeout: 10000 });
     };
-    alt.append(here);
+    alt.append(pin, here);
     sec.append(alt);
     return sec;
+  }
+
+  /* ---- the place finder, shared by Plan step 2 and Browse -----------------------
+   *
+   * These were two different things doing one job. Plan step 2 could filter by kind,
+   * amenity and distance off the Parkway, search 478 enriched places and call Google;
+   * Browse could show curated campgrounds and fuel with four checkboxes and no search
+   * worth the name. A rider who learned one had learned nothing about the other.
+   *
+   * One implementation now, pointed at two sets of state keys. They stay independent on
+   * purpose -- narrowing Browse to hotels in Asheville should not quietly rewrite the trip
+   * being planned next door -- but they behave identically, which is the part that matters.
+   *
+   * Browse gets one thing Plan does not: fuel. Planning picks fuel stops for you, so
+   * offering the list there would be noise. Looking up where the pumps are is exactly what
+   * Browse is for.
+   */
+  const FINDER = {
+    plan: { kind: 'stayKind', showers: 'stayShowers', toilets: 'stayToilets',
+            within: 'stayWithinMi', query: 'destQuery',
+            google: 'googleResults', note: 'googleNote', fuel: false },
+    browse: { kind: 'browseKind', showers: 'browseShowers', toilets: 'browseToilets',
+              within: 'browseWithinMi', query: 'search',
+              google: 'browseGoogle', note: 'browseNote', fuel: true }
+  };
+
+  const finderKinds = f => [
+    ['all', 'Anywhere'], ['campground', 'Campgrounds'], ['koa', 'KOA'],
+    ['hotel', 'Hotels & motels'], ...(f.fuel ? [['fuel', 'Fuel']] : [])
+  ];
+
+  /* Everything the finder can show, already deduped and in milepost order. */
+  function finderPool(f) {
+    if (state[f.kind] === 'fuel') {
+      return D.fuel
+        .map(x => fuelAsPlace(x, x.parkway_lat != null
+          ? [x.parkway_lat, x.parkway_lon] : BRP.coordAtMp(x.mp)))
+        .sort((a, b) => a.mp - b.mp);
+    }
+    // A live Google result the baked list already carries is a duplicate, not a find, and
+    // it belongs at its own milepost rather than appended after everything else.
+    const known = new Set((D.places || []).map(c => c.google_id).filter(Boolean));
+    const fresh = (state[f.google] || []).filter(c => !known.has(c.google_id));
+    return [...(D.places || []), ...fresh].sort((a, b) => (a.mp ?? 0) - (b.mp ?? 0));
+  }
+
+  function finderMatches(f, { excludeChosen = false } = {}) {
+    const q = (state[f.query] || '').trim().toLowerCase();
+    const kind = state[f.kind];
+    return finderPool(f)
+      .filter(c => !excludeChosen || !state.stops.some(st => st.id === c.id))
+      // KOA is a brand, not a kind: it matches on the name across every source, so a KOA
+      // arriving from OSM or Google is caught the same as a curated one.
+      .filter(c => kind === 'all' || kind === 'fuel'
+                || (kind === 'koa' ? /\bkoa\b/i.test(c.name) : c.kind === kind))
+      // Google knows nothing about showers, so these stay strict: only places actually
+      // recorded as having one. Untagged is unknown, and unknown is not "no".
+      .filter(c => kind === 'fuel' || !state[f.showers] || c.showers === true)
+      .filter(c => kind === 'fuel' || !state[f.toilets] || c.toilets === true)
+      .filter(c => (c.off_parkway_mi ?? 0) <= state[f.within])
+      .filter(c => !q || c.name.toLowerCase().includes(q)
+                      || String(c.mp).includes(q)
+                      || (c.address || '').toLowerCase().includes(q)
+                      || (c.food || '').toLowerCase().includes(q)
+                      || (c.access || '').toLowerCase().includes(q));
+  }
+
+  function finderChips(f, onChange) {
+    const wrap = el('div');
+    const row = (cls) => { const r = el('div', 'chip-row'); r.style.margin = cls; return r; };
+
+    const kindRow = row('9px 0 6px');
+    finderKinds(f).forEach(([key, label]) => {
+      const c = el('button', `chip${state[f.kind] === key ? ' on' : ''}`, label);
+      c.setAttribute('aria-pressed', String(state[f.kind] === key));
+      c.onclick = () => { state[f.kind] = key; onChange(); };
+      kindRow.append(c);
+    });
+    wrap.append(kindRow);
+
+    // Fuel has no showers. Showing a dead filter is worse than showing none.
+    if (state[f.kind] !== 'fuel') {
+      const amen = row('0 0 6px');
+      [['showers', 'Has showers', 'Only places recorded as having showers'],
+       ['toilets', 'Has toilets', 'Only places recorded as having toilets']]
+        .forEach(([k, label, hint]) => {
+          const key = f[k];
+          const c = el('button', `chip${state[key] ? ' on' : ''}`, label);
+          c.title = hint;
+          c.setAttribute('aria-pressed', String(!!state[key]));
+          c.onclick = () => { state[key] = !state[key]; onChange(); };
+          amen.append(c);
+        });
+      wrap.append(amen);
+    }
+
+    const dist = row('0');
+    for (const mi of [2, 5, 10, 15, 999]) {
+      const label = mi === 999 ? 'Any distance' : `Within ${mi} mi`;
+      const c = el('button', `chip${state[f.within] === mi ? ' on' : ''}`, label);
+      c.title = state[f.kind] === 'fuel'
+        ? 'How far off the Parkway the pumps are' : 'Straight-line distance from the Parkway';
+      c.onclick = () => { state[f.within] = mi; onChange(); };
+      dist.append(c);
+    }
+    wrap.append(dist);
+    return wrap;
+  }
+
+  /* One row. Tapping shows the place ON THE MAP -- the detail belongs where the rider is
+   * looking at the location, and committing stays a second, deliberate press in the card. */
+  function finderRow(c) {
+    const b = el('button', 'row');
+    b.dataset.mp = c.mp ?? 0;
+    b.append(el('div', 'mp', c.mp != null ? `MP ${c.mp.toFixed(0)}` : ''));
+    const body = el('div', 'body');
+    body.append(el('div', 'name', c.name));
+    body.append(el('div', 'meta', [
+      c.kind === 'fuel' ? c.address : c.price, c.season,
+      c.kind === 'fuel' ? null : c.address,
+      c.off_parkway_mi != null && c.off_parkway_mi > 0 ? `${c.off_parkway_mi} mi off` : null
+    ].filter(Boolean).join(' \u00b7 ')));
+
+    const badges = el('div', 'badges');
+    const add = (cls, text, title) => {
+      const x = el('span', `badge ${cls}`, text);
+      if (title) x.title = title;
+      badges.append(x);
+    };
+    if (c.kind === 'fuel') {
+      const g = { usable: ['ok', 'Fuel'], usable_via_detour: ['info', 'Via detour'],
+                  unconfirmed: ['warn', 'Unconfirmed'], do_not_rely: ['danger', 'Do not rely'],
+                  unreachable: ['danger', 'Unreachable'] }[c._fuel.plan_grade]
+                || ['warn', c._fuel.plan_grade];
+      add(g[0], g[1], c.watchout || '');
+      if (c.fuelConfidence && c.fuelConfidence !== 'verified') add('warn', c.fuelConfidence);
+      if ((c.stations || []).length) add('info', `${c.stations.length} station`
+                                              + (c.stations.length > 1 ? 's' : ''));
+    } else {
+      if (c.kind === 'hotel') add('info', 'Lodging');
+      if (c.moto) add('moto', 'Moto camp');
+      if (c.tier === 'top') add('ok', 'Top pick');
+      if (c.showers === true) add('ok', 'Showers');
+      else if (c.showers === false) add('danger', 'No showers');
+      else add('warn', 'Showers unknown');
+      if (c.source === 'osm' && c.verified) add('ok', 'Google verified');
+      else if (c.source === 'osm') add('', 'OSM');
+      if (c.source === 'google') add('', 'Google');
+      if (c.phone) add('info', 'Phone');
+    }
+    if (badges.childElementCount) body.append(badges);
+    b.append(body);
+    if (state.previewId === c.id) b.classList.add('sel');
+    b.onclick = () => { state.previewId = c.id; render(); previewOnMap(c); };
+    return b;
   }
 
   /* ---- input 2: where you are staying -------------------------------------------
@@ -521,74 +699,19 @@
     input.value = state.destQuery || '';
     sec.append(input);
 
-    const kindRow = el('div', 'chip-row');
-    kindRow.style.margin = '9px 0 6px';
-    for (const [key, label] of [['all', 'Anywhere'], ['campground', 'Campgrounds'],
-                                ['koa', 'KOA'], ['hotel', 'Hotels & motels']]) {
-      const c = el('button', `chip${state.stayKind === key ? ' on' : ''}`, label);
-      c.onclick = () => { state.stayKind = key; render(); };
-      kindRow.append(c);
-    }
-    sec.append(kindRow);
-
-    const amenityRow = el('div', 'chip-row');
-    amenityRow.style.marginBottom = '6px';
-    for (const [key, label, hint] of [
-      ['stayShowers', 'Has showers', 'Only places recorded as having showers'],
-      ['stayToilets', 'Has toilets', 'Only places recorded as having toilets']
-    ]) {
-      const c = el('button', `chip${state[key] ? ' on' : ''}`, label);
-      c.title = hint;
-      c.onclick = () => { state[key] = !state[key]; render(); };
-      amenityRow.append(c);
-    }
-    sec.append(amenityRow);
-
-    const distRow = el('div', 'chip-row');
-    for (const mi of [2, 5, 10, 15, 999]) {
-      const label = mi === 999 ? 'Any distance' : `Within ${mi} mi`;
-      const c = el('button', `chip${state.stayWithinMi === mi ? ' on' : ''}`, label);
-      c.title = 'Straight-line distance from the Parkway';
-      c.onclick = () => { state.stayWithinMi = mi; render(); };
-      distRow.append(c);
-    }
-    sec.append(distRow);
+    sec.append(finderChips(FINDER.plan, render));
 
     const count = el('div', 'tiny');
     count.style.marginTop = '8px';
     const list = el('div', 'scroller');
     sec.append(count, list);
 
-    const matches = () => {
-      const q = (state.destQuery || '').trim().toLowerCase();
-      // Live Google results belong IN the list at their own milepost, not appended after
-      // it. Concatenating them left the rider scrolling MP 0 to 469 and then starting over
-      // at MP 0 again for the Google ones. And a result the baked list already carries --
-      // most of them, now that every place is enriched -- is a duplicate, not a find.
-      const known = new Set((D.places || []).map(c => c.google_id).filter(Boolean));
-      const fresh = (state.googleResults || []).filter(c => !known.has(c.google_id));
-      const pool = [...(D.places || []), ...fresh].sort((a, b) => (a.mp ?? 0) - (b.mp ?? 0));
-      return pool
-        .filter(c => !state.stops.some(st => st.id === c.id))
-        // KOA is a brand, not a kind: it matches on the name across every source, so a
-        // KOA that arrives from OSM or Google is caught the same as a curated one.
-        .filter(c => state.stayKind === 'all'
-                  || (state.stayKind === 'koa' ? /\bkoa\b/i.test(c.name)
-                                               : c.kind === state.stayKind))
-        .filter(c => !state.stayShowers || c.showers === true)
-        .filter(c => !state.stayToilets || c.toilets === true)
-        .filter(c => (c.off_parkway_mi ?? 0) <= state.stayWithinMi)
-        .filter(c => !q || c.name.toLowerCase().includes(q)
-                        || String(c.mp).includes(q)
-                        || (c.address || '').toLowerCase().includes(q)
-                        || (c.food || '').toLowerCase().includes(q)
-                        || (c.access || '').toLowerCase().includes(q));
-    };
+    const matches = () => finderMatches(FINDER.plan, { excludeChosen: true });
 
     const draw = () => {
       list.textContent = '';
       const rows = matches();
-      const total = (D.places || []).length + (state.googleResults || []).length;
+      const total = (D.places || []).length + (state[FINDER.plan.google] || []).length;
       count.textContent = `${rows.length} of ${total} places`
         + (D.has_osm ? '' : ' \u00b7 curated list only, run build/fetch_osm.py to widen it');
       if (!rows.length) {
@@ -596,38 +719,7 @@
                                      + 'distance.'));
         return;
       }
-      rows.slice(0, 300).forEach(c => {
-        const b = el('button', 'row');
-        b.append(el('div', 'mp', c.mp != null ? `MP ${c.mp.toFixed(0)}` : ''));
-        const body = el('div', 'body');
-        body.append(el('div', 'name', c.name));
-        body.append(el('div', 'meta', [
-          c.price, c.season, c.address,
-          c.off_parkway_mi != null ? `${c.off_parkway_mi} mi off` : null
-        ].filter(Boolean).join(' \u00b7 ')));
-        const badges = el('div', 'badges');
-        if (c.kind === 'hotel') badges.append(el('span', 'badge info', 'Lodging'));
-        if (c.moto) badges.append(el('span', 'badge moto', 'Moto camp'));
-        if (c.tier === 'top') badges.append(el('span', 'badge ok', 'Top pick'));
-        if (c.showers === true) badges.append(el('span', 'badge ok', 'Showers'));
-        else if (c.showers === false) badges.append(el('span', 'badge danger', 'No showers'));
-        else badges.append(el('span', 'badge warn', 'Showers unknown'));
-        if (c.source === 'osm' && c.verified) {
-          badges.append(el('span', 'badge ok', 'Google verified'));
-        } else if (c.source === 'osm') {
-          badges.append(el('span', 'badge', 'OSM'));
-        }
-        if (c.source === 'google') badges.append(el('span', 'badge', 'Google'));
-        if (c.phone) badges.append(el('span', 'badge info', 'Phone'));
-        if (badges.childElementCount) body.append(badges);
-        b.append(body);
-        if (state.previewId === c.id) b.classList.add('sel');
-        // Tapping shows it ON THE MAP. The detail belongs where the rider is looking at
-        // the location, not stacked in a sidebar where it pushes the list around and gets
-        // lost. Committing is still a second, deliberate action, taken in the popup.
-        b.onclick = () => { state.previewId = c.id; render(); previewOnMap(c); };
-        list.append(b);
-      });
+      rows.slice(0, 300).forEach(c => list.append(finderRow(c)));
     };
     input.oninput = e => { state.destQuery = e.target.value; draw(); };
     draw();
@@ -654,12 +746,28 @@
 
     const facts = [
       ['Price', c.price], ['Season', c.season], ['Address', c.address],
-      ['Showers', c.showers === true ? 'Yes' : c.showers === false ? 'No'
+      // A gas station has no shower block, and printing "Showers: not recorded" against
+      // one is noise pretending to be data.
+      ['Showers', c.kind === 'fuel' ? null
+                 : c.showers === true ? 'Yes' : c.showers === false ? 'No'
                  : 'Not recorded — nobody has said either way'],
-      ['Toilets', c.toilets === true ? 'Yes' : c.toilets === false ? 'No'
+      ['Toilets', c.kind === 'fuel' ? null
+                 : c.toilets === true ? 'Yes' : c.toilets === false ? 'No'
                  : 'Not recorded'],
       ['Getting in', c.access], ['Why it works', c.standout],
       ['Watch out', c.watchout], ['Food', c.food], ['Phone', c.phone],
+      // Fuel carries two independent answers and they must not be merged: does a pump
+      // exist, and can you actually get to it in 2026.
+      ['Fuel', c.fuelGrade],
+      ['Checked', c.fuelConfidence
+        ? (c.fuelConfidence === 'verified' ? 'Verified against published sources'
+           : `Confidence: ${c.fuelConfidence}`) : null],
+      ['Stations', (c.stations || []).length
+        ? c.stations.map(st => [st.name || st.brand,
+                                st.hours ? `(${st.hours})` : null,
+                                st.mi_straight != null ? `${st.mi_straight} mi` : null]
+                               .filter(Boolean).join(' ')).join('\n')
+        : null],
       // Google's contribution. A rating with no count behind it says nothing, so the
       // count travels with it.
       ['Rating', c.rating != null
@@ -686,7 +794,10 @@
         + `You can still get here, but not straight off the Parkway.`));
     }
     body.append(el('div', 'tiny',
-      c.source === 'curated' ? 'Researched and verified for this planner.'
+      c.kind === 'fuel'
+        ? 'There is no fuel on the Parkway itself. Every one of these is a ride off it and '
+          + 'back. Run build/verify_fuel.py to check these against Google.'
+      : c.source === 'curated' ? 'Researched and verified for this planner.'
       : c.source === 'osm' && c.verified
         ? 'Located from OpenStreetMap, confirmed against Google. OpenStreetMap places the '
           + 'milepost; Google supplies the contact details.'
@@ -702,15 +813,16 @@
       if (layers.preview) layers.preview.clearLayers();
       state.previewId = null;
     };
-    const add = el('button', 'btn primary', 'Stay here');
+    const isFuel = c.kind === 'fuel';
+    const add = el('button', 'btn primary', isFuel ? 'Add as a fuel stop' : 'Stay here');
     add.onclick = () => {
-      const stop = BRP.placeStop(c);
+      const stop = isFuel ? BRP.asStop(c._fuel) : BRP.placeStop(c);
       dismiss();
       state.destQuery = '';
       state.addingStop = false;
       addStop(stop);
     };
-    const shut = el('button', 'btn ghost', 'Not this one');
+    const shut = el('button', 'btn ghost', isFuel ? 'Close' : 'Not this one');
     shut.onclick = () => { dismiss(); render(); };
     row.append(add, shut);
     if (c.url) {
@@ -764,24 +876,26 @@
   const knownGoogleIds = () =>
     new Set((D.places || []).map(c => c.google_id).filter(Boolean));
 
-  function googleSearchRow() {
+  function googleSearchRow(f = FINDER.plan) {
     const wrap = el('div');
     wrap.style.marginTop = '10px';
     const row = el('div', 'btn-row');
-    const withinMi = Math.min(state.stayWithinMi, 25);
+    const withinMi = Math.min(state[f.within], 25);
     const samples = parkwaySamples(withinMi);
-    const what = state.stayKind === 'hotel' ? 'hotels & motels'
-               : state.stayKind === 'koa' ? 'KOA campgrounds'
-               : state.stayKind === 'campground' ? 'campgrounds' : 'places to stay';
+    const kind = state[f.kind];
+    const what = kind === 'fuel' ? 'gas stations'
+               : kind === 'hotel' ? 'hotels & motels'
+               : kind === 'koa' ? 'KOA campgrounds'
+               : kind === 'campground' ? 'campgrounds' : 'places to stay';
     const btn = el('button', 'btn sm ghost',
       `Search Google for ${what} along the whole Parkway`);
     const status = el('div', 'tiny');
     status.style.marginTop = '6px';
-    if (state.googleNote) status.textContent = state.googleNote;
+    if (state[f.note]) status.textContent = state[f.note];
     row.append(btn);
-    if (state.googleResults) {
+    if (state[f.google]) {
       const clear = el('button', 'btn sm ghost', 'Clear Google results');
-      clear.onclick = () => { state.googleResults = null; state.googleNote = null; render(); };
+      clear.onclick = () => { state[f.google] = null; state[f.note] = null; render(); };
       row.append(clear);
     }
     wrap.append(row, status);
@@ -794,8 +908,8 @@
 
     btn.onclick = async () => {
       btn.disabled = true;
-      const type = (state.stayKind === 'campground' || state.stayKind === 'koa')
-        ? 'campground' : 'lodging';
+      const type = kind === 'fuel' ? 'gas_station'
+                 : (kind === 'campground' || kind === 'koa') ? 'campground' : 'lodging';
       const radiusM = Math.round(withinMi * 1609);
       const found = new Map();
       let failed = null, raw = 0;
@@ -830,32 +944,32 @@
       }
       btn.disabled = false;
       const hits = [...found.values()]
-        .filter(h => h.off_parkway_mi <= state.stayWithinMi)
+        .filter(h => h.off_parkway_mi <= state[f.within])
         .sort((a, b) => a.mp - b.mp);
       const tooFar = found.size - hits.length;
       const already = hits.filter(h => knownGoogleIds().has(h.google_id)).length;
-      state.googleResults = hits;
+      state[f.google] = hits;
 
       // Every count that could explain an empty list, named. Nearly all of these places
       // are already in the baked list now that it is enriched, so "0 new" is the normal
       // answer and needs to read as success rather than as a failure.
       if (failed) {
-        state.googleNote = `${failed}. `
+        state[f.note] = `${failed}. `
           + (found.size ? `Kept the ${hits.length} found before it stopped.` : 'Nothing kept.');
       } else if (!raw) {
-        state.googleNote = `${samples.length} searches, and Google returned no ${what} `
+        state[f.note] = `${samples.length} searches, and Google returned no ${what} `
           + `anywhere along the Parkway. That is a Google-side result, not a connection `
           + `problem — try a wider distance, or a different category.`;
       } else {
         const parts = [`${samples.length} searches found ${raw} results, `
                      + `${found.size} distinct`];
-        if (tooFar) parts.push(`${tooFar} beyond ${state.stayWithinMi} mi`);
+        if (tooFar) parts.push(`${tooFar} beyond ${state[f.within]} mi`);
         if (already) parts.push(`${already} already in the list`);
         const brandNew = hits.length - already;
         parts.push(brandNew > 0
           ? `${brandNew} new, now merged in at their mileposts`
           : 'nothing new — the list already has them all');
-        state.googleNote = parts.join(' · ') + '.';
+        state[f.note] = parts.join(' · ') + '.';
       }
       render();
     };
@@ -1282,98 +1396,85 @@
   }
 
   /* ---- rendering: browse --------------------------------------------------- */
+  /* ---- rendering: browse ---------------------------------------------------
+   *
+   * The lookup tab. Same search, same filters, same cards as Plan step 2 -- because a
+   * rider should not have to learn two interfaces to the same 478 places -- plus fuel,
+   * which Plan does not offer because Plan picks the fuel stops for you.
+   *
+   * Nothing here commits to the trip. Tapping a row opens the place on the map, and the
+   * card's own button is what adds it. Browse rows used to call addStop() on click, so a
+   * rider skimming the list to see what was out there quietly built an itinerary.
+   */
   function renderBrowse() {
     const pane = $('#pane-browse');
     pane.textContent = '';
+    const f = FINDER.browse;
 
-    const ctrl = el('div', 'section');
-    const search = el('input');
-    search.type = 'text'; search.placeholder = 'Search name, town, milepost…';
-    search.value = state.search;
-    search.oninput = e => { state.search = e.target.value; renderBrowse(); };
-    ctrl.append(search);
-    const chips = el('div', 'chip-row');
-    chips.style.marginTop = '9px';
-    for (const [key, label] of [['campground', 'Campgrounds'], ['fuel', 'Fuel'],
-                                ['motoOnly', 'Moto camps'], ['topOnly', 'Top picks']]) {
-      const c = el('button', `chip${state.filters[key] ? ' on' : ''}`, label);
-      c.onclick = () => { state.filters[key] = !state.filters[key]; renderBrowse(); };
-      chips.append(c);
+    const sec = el('div', 'section');
+    const input = el('input');
+    input.type = 'search';
+    input.placeholder = state[f.kind] === 'fuel'
+      ? 'Search by town, road or milepost\u2026'
+      : 'Search by name, town or milepost\u2026';
+    input.setAttribute('aria-label', 'Search places');
+    input.value = state[f.query] || '';
+    sec.append(input);
+
+    sec.append(finderChips(f, renderBrowse));
+
+    const extras = el('div', 'chip-row');
+    extras.style.marginTop = '6px';
+    if (state[f.kind] !== 'fuel') {
+      for (const [key, label, hint] of [
+        ['motoOnly', 'Moto camps', 'Places that cater to motorcyclists specifically'],
+        ['topOnly', 'Top picks', 'The researched shortlist']]) {
+        const c = el('button', `chip${state.filters[key] ? ' on' : ''}`, label);
+        c.title = hint;
+        c.setAttribute('aria-pressed', String(!!state.filters[key]));
+        c.onclick = () => { state.filters[key] = !state.filters[key]; renderBrowse(); };
+        extras.append(c);
+      }
+      sec.append(extras);
     }
-    ctrl.append(chips);
-    pane.append(ctrl);
 
-    const q = state.search.trim().toLowerCase();
-    const match = t => !q || String(t).toLowerCase().includes(q);
-    const list = el('div');
+    const count = el('div', 'tiny');
+    count.style.marginTop = '8px';
+    const list = el('div', 'scroller');
+    sec.append(count, list);
 
-    if (state.filters.campground) {
-      D.campgrounds
-        .filter(c => !state.filters.motoOnly || c.moto)
-        .filter(c => !state.filters.topOnly || c.tier === 'top')
-        .filter(c => match(c.name) || match(c.mp) || match(c.access))
-        .forEach(c => list.append(stopRow(BRP.asStop(c), c)));
-    }
-    if (state.filters.fuel && !state.filters.motoOnly) {
-      D.fuel
-        .filter(f => !state.filters.topOnly)
-        .filter(f => match(f.town) || match(f.exit_road) || match(f.mp))
-        .forEach(f => list.append(stopRow(BRP.asStop(f), f)));
-    }
-    const rows = [...list.children];
-    rows.sort((a, b) => +a.dataset.mp - +b.dataset.mp).forEach(r => list.append(r));
-    if (!rows.length) list.append(el('div', 'empty', 'Nothing matches those filters.'));
-    pane.append(list);
-  }
+    const matches = () => finderMatches(f)
+      .filter(c => c.kind === 'fuel' || !state.filters.motoOnly || c.moto)
+      .filter(c => c.kind === 'fuel' || !state.filters.topOnly || c.tier === 'top');
 
-  /* Badges carry the two independent axes side by side. Confidence answers "does a pump
-   * exist"; reachability answers "can I get there in 2026". SPEC 8 requires that an
-   * unverified stop cannot be silently relied on, so it is never merged into one score. */
-  function stopRow(stop, rec) {
-    const node = el('button', 'row');
-    node.dataset.mp = stop.mp;
-    node.append(el('div', 'mp', `MP ${stop.mp.toFixed(1)}`));
-    const body = el('div', 'body');
-    body.append(el('div', 'name', stop.name));
-    const bits = [];
-    if (rec.kind === 'fuel') {
-      bits.push(rec.town);
-      if (rec.detour_plan_mi) bits.push(`${rec.detour_plan_mi} mi off`);
-    } else {
-      bits.push(rec.price, rec.season);
-      if (rec.off_parkway_mi) bits.push(`${rec.off_parkway_mi} mi off`);
-    }
-    body.append(el('div', 'meta', bits.filter(Boolean).join(' · ')));
-
-    const badges = el('div', 'badges');
-    const add = (cls, text, title) => {
-      const b = el('span', `badge ${cls}`, text);
-      if (title) b.title = title;
-      badges.append(b);
+    const draw = () => {
+      list.textContent = '';
+      const rows = matches();
+      const pool = state[f.kind] === 'fuel'
+        ? D.fuel.length
+        : (D.places || []).length + (state[f.google] || []).length;
+      count.textContent = `${rows.length} of ${pool} `
+        + (state[f.kind] === 'fuel' ? 'fuel exits' : 'places');
+      if (!rows.length) {
+        list.append(el('div', 'empty',
+          'Nothing matches. Loosen a filter, or widen the distance.'));
+        return;
+      }
+      rows.slice(0, 300).forEach(c => list.append(finderRow(c)));
     };
-    if (rec.kind === 'fuel') {
-      const grade = {
-        usable: ['ok', 'Fuel'], usable_via_detour: ['info', 'Via detour'],
-        unconfirmed: ['warn', 'Unconfirmed'], do_not_rely: ['danger', 'Do not rely'],
-        unreachable: ['danger', 'Unreachable']
-      }[rec.plan_grade] || ['warn', rec.plan_grade];
-      add(grade[0], grade[1], rec.warning || rec.closure_note || '');
-      if (rec.confidence !== 'verified') add('warn', rec.confidence);
-      if (rec.distance_conflict) {
-        add('warn', 'distance?', 'Published and mapped station distances disagree for this exit.');
-      }
-    } else {
-      if (rec.moto) add('moto', 'Moto camp');
-      if (rec.tier === 'top') add('ok', 'Top pick');
-      if (!rec.reachable_from_parkway) {
-        add('info', 'Off-Parkway access',
-            rec.blocking_closure ? `Parkway closed here: ${rec.blocking_closure.reason}` : '');
-      }
+    input.oninput = e => { state[f.query] = e.target.value; draw(); };
+    draw();
+
+    sec.append(googleSearchRow(f));
+
+    if (state[f.kind] === 'fuel') {
+      sec.append(el('div', 'tiny',
+        'There is no fuel anywhere on the Parkway itself \u2014 every one of these is a '
+        + 'ride off it and back, and the mileage shown is one way. Grades separate two '
+        + 'things on purpose: whether a pump exists, and whether you can reach it in 2026.'));
     }
-    body.append(badges);
-    node.append(body);
-    node.onclick = () => { addStop(stop); flyTo(stop); };
-    return node;
+
+    pane.append(sec);
   }
 
   /* ---- rendering: export --------------------------------------------------- */
@@ -1533,6 +1634,13 @@
     pane.textContent = '';
     const acc = D.milepost_accuracy;
     const sections = [
+      ['Riding with no signal', 'Add this to your home screen and it installs as an app: '
+        + 'the whole planner, every campground, every fuel exit and the Parkway itself are '
+        + 'already on the phone, so it opens and plans with the radio off. Two things are '
+        + 'not. Map TILES are cached only as you look at them, so pan along your route at '
+        + 'home and that corridor stays visible in a dead zone \u2014 anywhere you have not '
+        + 'looked shows empty squares over a working map. And anything that asks Google, or '
+        + 'looks up an address, needs signal by definition; the plan itself does not.'],
       ['Closures', `From the NPS road-closure page, as of ${D.as_of}. These change — re-check `
         + `before you ride. The Parkway is in ${Object.keys(D.components).length} disconnected `
         + `pieces this year; the planner refuses to route between them rather than quietly `
@@ -1600,11 +1708,135 @@
     layers.route = L.layerGroup().addTo(map);
     layers.preview = L.layerGroup().addTo(map);
 
+    // A bare tap on the map used to open a browser prompt asking to name a custom stop.
+    // On a phone, panning with one finger lands as a tap often enough that the prompt
+    // became a regular interruption. It now only fires when the rider has explicitly
+    // asked to drop a pin.
     map.on('click', e => {
-      const name = prompt('Name this stop:', 'Custom stop');
-      if (name) addStop(BRP.customStop(e.latlng.lat, e.latlng.lng, name));
+      if (!state.pinMode) return;
+      state.pinMode = false;
+      state.start = { lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5),
+                      label: `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}` };
+      save();
+      render();
     });
+    refreshLegend();
     drawMarkers();
+    initMapToggle();
+  }
+
+  /* Give the phone its whole screen for whichever half is being used.
+   *
+   * Split gives the map 42vh and the list what is left, which is the right default and the
+   * wrong answer for both jobs when you are actually doing one of them: reading a list of
+   * 478 places through a 400px window, or looking at where a campsite sits on a 350px map.
+   *
+   * Desktop never sees this -- there is room for both there, and the button is display:none.
+   */
+  function initMapToggle() {
+    const btn = $('#maptoggle');
+    if (!btn || btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    btn.onclick = () => {
+      state.mapView = state.mapView === 'map' ? 'list' : 'map';
+      applyMapView();
+    };
+    applyMapView();
+  }
+
+  function applyMapView() {
+    const app = $('#app'), btn = $('#maptoggle');
+    if (!app || !btn) return;
+    app.classList.toggle('map-full', state.mapView === 'map');
+    app.classList.toggle('list-full', state.mapView === 'list');
+    const next = state.mapView === 'map' ? 'Show the list' : 'Show the full map';
+    btn.textContent = next;
+    btn.setAttribute('aria-label', next);
+    // Leaflet caches the container size, so a pane that changed height behind its back
+    // renders grey tiles and puts clicks in the wrong place until it is told.
+    if (map) setTimeout(() => map.invalidateSize({ animate: false }), 60);
+  }
+
+  /* The map's whole vocabulary, in one place.
+   *
+   * The legend used to be nowhere and the colours were literals scattered through
+   * drawMarkers and drawRoute. A legend written separately from the code that draws is a
+   * legend that goes stale, so both read this.
+   */
+  const MAPKEY = {
+    lines: [
+      { color: '#5b93b8', label: 'Parkway open', note: 'rideable in 2026' },
+      { color: '#c8552f', label: 'Parkway closed', note: 'dashed — Helene damage and roadworks',
+        dash: true },
+      { color: '#e0a33e', label: 'Your route', note: 'the ride as planned', weight: 5 },
+      { color: '#7fa35c', label: 'Road legs', note: 'to the Parkway, off to camp, home' },
+      { color: '#a9b39c', label: 'Straight-line estimate', note: 'no road route came back',
+        dash: true }
+    ],
+    places: [
+      { color: '#e0a33e', label: 'Top pick' },
+      { color: '#c8552f', label: 'Motorcycle camp' },
+      { color: '#7fa35c', label: 'Campground' },
+      { color: '#5b93b8', label: 'Hotel or motel' }
+    ],
+    fuel: [
+      { color: '#5b93b8', label: 'Fuel — usable' },
+      { color: '#e0a33e', label: 'Fuel — unconfirmed' },
+      { color: '#c8552f', label: 'Fuel — do not rely on it' },
+      { color: '#6b6b6b', label: 'Fuel — unreachable in 2026' }
+    ]
+  };
+
+  const PLACE_COLOR = c => c.kind === 'hotel' ? '#5b93b8'
+                         : c.moto ? '#c8552f'
+                         : c.tier === 'top' ? '#e0a33e' : '#7fa35c';
+  const FUEL_COLOR = f => ({ usable: '#5b93b8', usable_via_detour: '#5b93b8',
+                             unconfirmed: '#e0a33e', do_not_rely: '#c8552f',
+                             unreachable: '#6b6b6b' }[f.plan_grade] || '#5b93b8');
+
+  /* A legend the rider can collapse. Open by default the first time, because a map of
+   * unexplained coloured dots is the thing being fixed; remembered thereafter. */
+  function mapLegend() {
+    const box = el('div', `legend${state.legendOpen ? '' : ' shut'}`);
+    const head = el('button', 'legend-head');
+    head.append(el('span', null, 'Map key'));
+    head.append(el('span', 'legend-toggle', state.legendOpen ? '\u2715' : '?'));
+    head.setAttribute('aria-expanded', String(!!state.legendOpen));
+    head.onclick = () => { state.legendOpen = !state.legendOpen; save(); render(); };
+    box.append(head);
+    if (!state.legendOpen) return box;
+
+    const body = el('div', 'legend-body');
+    const group = (title, items, kind) => {
+      body.append(el('div', 'legend-group', title));
+      items.forEach(it => {
+        const row = el('div', 'legend-row');
+        const sw = el('span', `legend-swatch ${kind}`);
+        sw.style.background = it.color;
+        if (it.dash) sw.style.backgroundImage =
+          `repeating-linear-gradient(90deg, ${it.color} 0 4px, transparent 4px 7px)`;
+        row.append(sw);
+        row.append(el('span', 'legend-label', it.label));
+        if (it.note) row.append(el('span', 'legend-note', it.note));
+        body.append(row);
+      });
+    };
+    group('Lines', MAPKEY.lines, 'line');
+    group('Places to stay', MAPKEY.places, 'pin');
+    group('Fuel', MAPKEY.fuel, 'pin');
+    body.append(el('div', 'legend-note',
+      'A bigger dot is a place researched for this planner. Tap any marker to see it; '
+      + 'nothing is added to your trip until you say so.'));
+    box.append(body);
+    return box;
+  }
+
+  function refreshLegend() {
+    const host = $('#map');
+    if (!host) return;
+    const old = host.querySelector('.legend');
+    if (old) old.remove();
+    host.append(mapLegend());
   }
 
   function dot(color, size = 11) {
@@ -1614,19 +1846,31 @@
     });
   }
 
+  /* Every marker behaves the same way: it says what it is on hover, and shows its card
+   * on tap. Nothing joins the trip without a second, deliberate press.
+   *
+   * It did not used to. Campground markers had a tooltip and fuel markers had none, so
+   * half the dots on the map explained themselves and half sat there silent. Worse, a tap
+   * on a fuel dot called addStop() outright -- one stray touch on a phone and a fuel stop
+   * appeared in the itinerary with no card, no confirmation and no obvious way to see what
+   * had just happened.
+   */
   function drawMarkers() {
     layers.stops.clearLayers();
-    const COL = { top: '#e0a33e', solid: '#7fa35c', backup: '#8d9683', moto: '#c8552f',
-                  hotel: '#5b93b8' };
+
     if (state.filters.campground) {
       (D.places || []).forEach(c => {
-        const col = c.kind === 'hotel' ? COL.hotel
-                  : c.moto ? COL.moto : (COL[c.tier] || COL.solid);
-        // A bare dot tells a rider nothing, so every marker carries its name on hover and
-        // its detail on click -- the same card the list shows.
-        L.marker([c.lat, c.lon], { icon: dot(col, c.source === 'curated' ? 12 : 9) })
-          .bindTooltip(`${c.name}${c.mp != null ? ` — MP ${c.mp.toFixed(1)}` : ''}`,
-                       { direction: 'top' })
+        const label = [c.name,
+                       c.mp != null ? `MP ${c.mp.toFixed(1)}` : null,
+                       c.kind === 'hotel' ? 'hotel or motel'
+                         : c.moto ? 'motorcycle camp' : 'campground',
+                       c.off_parkway_mi != null && c.off_parkway_mi >= 0.3
+                         ? `${c.off_parkway_mi} mi off the Parkway` : 'on the Parkway']
+                      .filter(Boolean).join(' · ');
+        L.marker([c.lat, c.lon],
+                 { icon: dot(PLACE_COLOR(c), c.source === 'curated' ? 12 : 9),
+                   keyboard: true, title: label, alt: label })
+          .bindTooltip(label, { direction: 'top', sticky: true })
           .on('click', () => {
             state.previewId = c.id;
             state.tab = 'plan';
@@ -1637,18 +1881,48 @@
           .addTo(layers.stops);
       });
     }
+
     if (state.filters.fuel) {
       D.fuel.forEach(f => {
-        const col = { usable: '#5b93b8', usable_via_detour: '#5b93b8', unconfirmed: '#e0a33e',
-                      do_not_rely: '#c8552f', unreachable: '#6b6b6b' }[f.plan_grade] || '#5b93b8';
-        L.marker([f.parkway_lat, f.parkway_lon], { icon: dot(col, 9) })
-          .bindPopup(`<h3>FUEL ${f.exit_road}</h3>MP ${f.mp} · ${f.town}<br>` +
-                     `${f.plan_grade.replace(/_/g, ' ')}${f.warning ? '<br><br>' + f.warning : ''}` +
-                     `${f.closure_note ? '<br><br>' + f.closure_note : ''}`)
-          .on('click', () => addStop(BRP.asStop(f)))
+        const grade = (f.plan_grade || '').replace(/_/g, ' ');
+        const at = f.parkway_lat != null
+          ? [f.parkway_lat, f.parkway_lon] : BRP.coordAtMp(f.mp);
+        const label = [`FUEL ${f.exit_road}`, `MP ${f.mp}`, f.town, grade,
+                       f.detour_plan_mi ? `${f.detour_plan_mi} mi off` : null]
+                      .filter(Boolean).join(' · ');
+        L.marker(at, { icon: dot(FUEL_COLOR(f), 9), keyboard: true,
+                       title: label, alt: label })
+          .bindTooltip(label, { direction: 'top', sticky: true })
+          .on('click', () => {
+            state.previewId = `fuel-${f.mp}`;
+            render();
+            previewOnMap(fuelAsPlace(f, at));
+          })
           .addTo(layers.stops);
       });
     }
+  }
+
+  /* A fuel exit, shaped like a place so it can use the same card. The rider gets the same
+   * read-then-decide flow they get for a campground, instead of a tap that silently
+   * commits. */
+  function fuelAsPlace(f, at) {
+    const grade = {
+      usable: 'Usable', usable_via_detour: 'Usable, via the signed detour',
+      unconfirmed: 'Unconfirmed — nobody has checked this one',
+      do_not_rely: 'Do not rely on this one',
+      unreachable: 'Unreachable in 2026'
+    }[f.plan_grade] || f.plan_grade;
+    return {
+      id: `fuel-${f.mp}`, name: `Fuel — ${f.exit_road}`, kind: 'fuel',
+      lat: at[0], lon: at[1], mp: f.mp,
+      off_parkway_mi: f.detour_plan_mi != null ? f.detour_plan_mi : null,
+      address: f.town, state: f.state,
+      showers: null, toilets: null, source: 'curated',
+      fuelGrade: grade, fuelConfidence: f.confidence,
+      watchout: f.warning || f.closure_note || null,
+      stations: f.stations || [], _fuel: f
+    };
   }
 
   function drawRoute() {
@@ -1787,7 +2061,7 @@
     document.querySelectorAll('.tabs button').forEach(b =>
       b.setAttribute('aria-selected', String(b.dataset.tab === state.tab)));
     renderActiveTab();
-    if (map) { drawMarkers(); drawRoute(); }
+    if (map) { drawMarkers(); drawRoute(); refreshLegend(); }
     if (state.start && state.stops.length) {
       const trip = itinerary();
       if (trip && !trip.error) ensureRoads(trip);

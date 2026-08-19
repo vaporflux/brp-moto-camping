@@ -15,6 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 import enrich_google as E  # noqa: E402
+import verify_fuel as F  # noqa: E402
 
 failures = []
 
@@ -116,6 +117,54 @@ def main():
     check("no results at all", E.best_match(P, [])[0] is None)
     check("a result with no coordinates is ignored",
           E.best_match(P, [{"id": "x", "displayName": {"text": "Sherando Lake"}}])[0] is None)
+
+    print("\nfuel: brand-led names, tight distance")
+    # A wrong phone number on a campground costs a call. A wrong pump strands a bike at the
+    # end of a tank on a road with no fuel for 469 miles, so the distance bar here is four
+    # times tighter and the name rule leans on the brand, which is how fuel is actually
+    # signed.
+    check("'Exxon' matches 'Exxon Travel Center'",
+          F.name_ratio("Exxon", "Exxon Travel Center") >= F.MIN_NAME_RATIO)
+    check("'Citgo' matches 'CITGO Food Mart'",
+          F.name_ratio("Citgo", "CITGO Food Mart") >= F.MIN_NAME_RATIO)
+    check("two different brands do not match",
+          F.name_ratio("Speedway", "Marathon") < F.MIN_NAME_RATIO)
+    check("the distance bar is tighter than for lodging",
+          F.MATCH_MI < E.MAX_MATCH_MI, f"{F.MATCH_MI} vs {E.MAX_MATCH_MI}")
+
+    ex = {"mp": 100.0, "stations": [
+        {"name": "Exxon", "lat": 36.0000, "lon": -80.0000},
+        {"name": "Gone Gas", "lat": 36.0100, "lon": -80.0100},
+        {"name": "Shuttered Shell", "lat": 36.0200, "lon": -80.0200},
+    ]}
+    goog = [
+        {"id": "g1", "displayName": {"text": "Exxon Travel Center"},
+         "location": {"latitude": 36.0002, "longitude": -80.0002},
+         "businessStatus": "OPERATIONAL", "nationalPhoneNumber": "(336) 555-0100"},
+        {"id": "g2", "displayName": {"text": "Shuttered Shell"},
+         "location": {"latitude": 36.0201, "longitude": -80.0201},
+         "businessStatus": "CLOSED_PERMANENTLY"},
+        {"id": "g3", "displayName": {"text": "Brand New Circle K"},
+         "location": {"latitude": 36.0300, "longitude": -80.0300},
+         "businessStatus": "OPERATIONAL"},
+    ]
+    stations, closed, discovered = F.reconcile(ex, goog)
+    by = {s["name"]: s for s in stations}
+    check("an open station is confirmed", by["Exxon"]["verify"] == "confirmed")
+    check("and picks up Google's phone number",
+          by["Exxon"]["google"]["phone"] == "(336) 555-0100")
+    check("a closed station is flagged closed, not confirmed",
+          by["Shuttered Shell"]["verify"] == "closed")
+    check("and is listed for review", len(closed) == 1, str(closed))
+    # Rural Google coverage is patchy, so absence is a flag, never a deletion.
+    check("a station Google cannot find is unconfirmed, not deleted",
+          by["Gone Gas"]["verify"] == "unconfirmed")
+    check("every station we listed still comes back", len(stations) == 3)
+    check("a pump we never recorded is discovered",
+          len(discovered) == 1 and discovered[0]["name"] == "Brand New Circle K",
+          str(discovered))
+    check("a closed pump is not offered as a discovery",
+          all(d["status"] == "OPERATIONAL" for d in discovered))
 
     print()
     if failures:
