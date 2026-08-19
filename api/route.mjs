@@ -19,6 +19,13 @@
  * If no key is configured this returns 503 and the page falls back to a straight-line
  * estimate, clearly labelled as one. Routing is an enhancement, not a dependency: a
  * planned trip is cached with its geometry, so the ride works with no signal afterwards.
+ *
+ * FILE EXTENSION IS LOAD-BEARING. This is .mjs, not .js, because Vercel's Node runtime
+ * treats a bare .js file as CommonJS unless package.json declares "type": "module" -- and
+ * `export default` then fails to parse, so the function never deploys and the route 404s.
+ * The alternative fix is adding a package.json, but this repo deliberately has no build
+ * step and introducing one risks changing how Vercel treats the whole project. Renaming
+ * the file is the contained fix.
  */
 
 const MAX_WAYPOINTS = 4;

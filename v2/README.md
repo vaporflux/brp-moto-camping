@@ -157,9 +157,18 @@ is short, easy to get wrong, and the one the rider cannot work out from a milepo
 **Results are cached with the trip.** Routing needs signal and riding does not, so a trip
 planned at home keeps its roads and its turn list in a dead zone.
 
-### The one piece of server-side code
+### The two pieces of server-side code
 
-`api/places.js` and `api/route.js` exist because a Vercel environment variable is only a
+They are `.mjs`, not `.js`, and that is load-bearing. Vercel's Node runtime treats a bare
+`.js` file as CommonJS unless `package.json` declares `"type": "module"`, so `export
+default` fails to parse, the function never deploys, and the route returns a bare 404 that
+looks like a routing problem rather than a syntax one. Adding a `package.json` would also
+fix it, but this repo deliberately has no build step and introducing one risks changing how
+Vercel treats the whole project.
+
+
+
+`api/places.mjs` and `api/route.mjs` exist because a Vercel environment variable is only a
 secret if the code reading it runs on Vercel. A static page's JavaScript cannot read one, and inlining it at
 build time puts the key in the page source. So the key lives in the function and the
 browser never sees it.
