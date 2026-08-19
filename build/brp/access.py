@@ -276,6 +276,9 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
         "exit_reserve_stop": ({"mp": exit_stop["mp"], "town": exit_stop.get("town")}
                               if exit_stop else None),
         "tank_at": tank_at,
+        # Where each waypoint falls along the journey line, so a caller can place a fuel
+        # stop on the correct leg. A round trip passes the same milepost twice.
+        "waypoint_pos": [round(p, 2) for p in waypoint_pos],
         "arrive_with_mi": round(remaining - (journey_mi - at), 1),
         "planning_range_mi": round(planning_range, 1),
         "parkway_mi": round(journey_mi, 1),

@@ -1139,7 +1139,17 @@
     let fuelLine;
     if (!f.ok) fuelLine = '';
     else if (f.stops.length) {
-      fuelLine = `${f.stops.length} fuel stop${f.stops.length > 1 ? 's' : ''} on the way.`;
+      // "2 fuel stops on the way" is technically true of a round trip and reads as two
+      // stops on the outbound leg. Split it, so the count matches what the list shows.
+      const lastStay = (f.waypointPos || [])[state.stops.length];
+      const home = lastStay == null ? 0
+        : f.stops.filter(x => x.pos > lastStay + 1e-6).length;
+      const out = f.stops.length - home;
+      fuelLine = home && out
+        ? `${f.stops.length} fuel stops — ${out} on the way out, ${home} on the way home.`
+        : home
+        ? `${home} fuel stop${home > 1 ? 's' : ''} on the way home.`
+        : `${out} fuel stop${out > 1 ? 's' : ''} on the way.`;
     } else if (thin) {
       fuelLine = `It fits on one tank, but only just — you arrive with about `
                + `${f.arriveWithMi} mi left. Fill up before MP ${c.mp}, or raise how far `
@@ -1155,66 +1165,85 @@
     if (trip.severedNote) sec.append(el('div', 'alert warn', trip.severedNote));
     wrap.append(sec);
 
-    // The itinerary as a numbered list of things that happen, in order.
+    /* The itinerary, in the order the rider actually meets each thing.
+     *
+     * This used to print every fuel stop in one block and then every overnight, which is
+     * wrong the moment a trip doubles back -- and a round trip always does. Abingdon to
+     * Devils Backbone and home is 556 miles of Parkway, and its two fuel stops fall at
+     * mile 186 and mile 378: one on the way out, one on the way home. Listed together
+     * they read as two stops twelve miles apart, which is nonsense, and they hid the
+     * thing the rider most needed to see -- that there IS a fuel stop after camp.
+     *
+     * planJourney lays the whole journey out as one distance line and gives every stop a
+     * position on it. So does every waypoint. Sorting by that position puts each step
+     * where it happens.
+     */
     const steps = el('div', 'day');
     steps.append(stepRow('HOME', state.start.label,
                          `Ride ~${c.approachMi} mi to the Parkway`));
+
+    const wpos = (f.ok && f.waypointPos) ? f.waypointPos : null;
+    // Tank state at each waypoint comes from the journey simulation, so the figure shown
+    // at camp is what the rider actually has for the morning -- campsites sell no fuel.
+    const tankAt = (f.tankAt || []).map(t => t.tankMi);
+
+    const events = [];
     // A 150 mile approach when a 64 mile one is visibly nearer reads as a broken planner.
     // It is not: the nearer entrance is on the far side of a Helene break and cannot reach
     // this stop on the Parkway at all. Say which entrance, and how much it would have
     // saved, so the rider can weigh moving the stop instead of just distrusting the plan.
     const sev = c.severedAlternative;
-    steps.append(stepRow(`MP ${c.mp}`, `Get on the Parkway — ${c.name}`,
-                         sev
-                           ? `Closest entry that can actually reach your stop. `
-                             + `MP ${sev.mp} (${sev.name}) is ${sev.savedMi} mi nearer to `
-                             + `you, but the Parkway is severed between there and here, so `
-                             + `it cannot get you to this stop.`
-                           : 'Closest entry from where you are starting'));
+    events.push({ pos: wpos ? wpos[0] : 0, order: 0, row: () => stepRow(
+      `MP ${c.mp}`, `Get on the Parkway — ${c.name}`,
+      sev ? `Closest entry that can actually reach your stop. MP ${sev.mp} (${sev.name}) `
+          + `is ${sev.savedMi} mi nearer to you, but the Parkway is severed between there `
+          + `and here, so it cannot get you to this stop.`
+          : 'Closest entry from where you are starting') });
+
+    state.stops.forEach((st, i) => {
+      const t = tankAt[i + 1];
+      const last = i === state.stops.length - 1;
+      events.push({ pos: wpos ? wpos[i + 1] : i + 1, order: 1, row: () => stepRow(
+        `MP ${st.mp.toFixed(1)}`, st.name,
+        [last && !trip.exitPoint ? 'Arrive' : (last ? 'Camp here' : `Overnight ${i + 1}`),
+         t != null ? `about ${t} mi of fuel in the tank` : null]
+        .filter(Boolean).join(' \u00b7 '), 'ok') });
+    });
+
     if (f.ok) {
+      // Anything past the last overnight is on the ride home. Saying so is the whole
+      // point: a rider who cannot tell will read it as a stop they already made.
+      const lastStayPos = wpos ? wpos[state.stops.length] : Infinity;
       f.stops.forEach(stop => {
-        // Greedy planning rides each tank to its limit, which minimises stops but can
-        // arrive on fumes. Say that plainly rather than printing a small number and
-        // leaving the rider to notice.
         const tight = stop.arriveWithMi < 15;
+        const homeward = stop.pos > lastStayPos + 1e-6;
         const detail = [
+          homeward ? 'On the way home' : null,
           stop.detourMi ? `${stop.detourMi} mi off the Parkway` : 'right at the exit',
           tight ? `cutting it fine — about ${stop.arriveWithMi} mi of planning range left`
                 : `about ${stop.arriveWithMi} mi of range still in hand`
-        ].join(' \u00b7 ');
-        steps.append(stepRow(`MP ${stop.mp}`,
+        ].filter(Boolean).join(' \u00b7 ');
+        events.push({ pos: stop.pos, order: 2, row: () => stepRow(
+          `MP ${stop.mp}`,
           `Fuel — ${[stop.road, stop.town].filter(Boolean).join(', ')}`,
-          detail, (tight || stop.grade === 'unconfirmed') ? 'warn' : null));
+          detail, (tight || stop.grade === 'unconfirmed') ? 'warn' : null) });
       });
     }
-    // Tank state at each waypoint comes from the journey simulation, so the figure shown
-    // at camp is what the rider actually has for the morning -- campsites sell no fuel.
-    const tankAt = (f.tankAt || []).reduce((m, t) => {
-      (m[t.mp.toFixed(1)] = m[t.mp.toFixed(1)] || []).push(t.tankMi); return m;
-    }, {});
-    const takeTank = mp => {
-      const k = mp.toFixed(1);
-      return tankAt[k] && tankAt[k].length ? tankAt[k].shift() : null;
-    };
-    takeTank(c.mp);   // the entry waypoint
 
-    state.stops.forEach((st, i) => {
-      const t = takeTank(st.mp);
-      const last = i === state.stops.length - 1;
-      const detail = [
-        last && !trip.exitPoint ? 'Arrive' : (last ? 'Camp here' : `Overnight ${i + 1}`),
-        t != null ? `about ${t} mi of fuel in the tank` : null
-      ].filter(Boolean).join(' \u00b7 ');
-      steps.append(stepRow(`MP ${st.mp.toFixed(1)}`, st.name, detail, 'ok'));
-    });
-
-    // Leaving the Parkway, and the ride to wherever the trip finishes.
     if (trip.exitPoint) {
-      const t = takeTank(trip.exitPoint.mp);
-      steps.append(stepRow(`MP ${trip.exitPoint.mp}`,
-        `Leave the Parkway — ${trip.exitPoint.name}`,
+      const t = tankAt[tankAt.length - 1];
+      events.push({ pos: wpos ? wpos[wpos.length - 1] : 1e9, order: 3, row: () => stepRow(
+        `MP ${trip.exitPoint.mp}`, `Leave the Parkway — ${trip.exitPoint.name}`,
         [`${trip.exitPoint.parkwayMi} mi of Parkway from camp`,
-         t != null ? `about ${t} mi of fuel left` : null].filter(Boolean).join(' \u00b7 ')));
+         t != null ? `about ${t} mi of fuel left` : null].filter(Boolean).join(' \u00b7 ')) });
+    }
+
+    // `order` breaks ties at the same position: a fuel stop sitting exactly on an
+    // overnight's milepost is reached after arriving, and leaving the Parkway is last.
+    events.sort((a, b) => (a.pos - b.pos) || (a.order - b.order));
+    events.forEach(e => steps.append(e.row()));
+
+    if (trip.exitPoint) {
       steps.append(stepRow('FINISH', trip.endLabel,
         `Ride ~${trip.exitPoint.rideOutMi} mi from the Parkway to here`, 'ok'));
     }
