@@ -145,7 +145,43 @@
   {
    "kind": "fuel",
    "name": "Vinton",
+   "mp": 112.43,
+   "access_class": "detour_access",
+   "closure": {
+    "from_mp": 112.4,
+    "to_mp": 115.0,
+    "reason": "Partial closure",
+    "detour": "MP 115-121.4 open via US 220"
+   }
+  },
+  {
+   "kind": "fuel",
+   "name": "Vinton",
    "mp": 112.99,
+   "access_class": "detour_access",
+   "closure": {
+    "from_mp": 112.4,
+    "to_mp": 115.0,
+    "reason": "Partial closure",
+    "detour": "MP 115-121.4 open via US 220"
+   }
+  },
+  {
+   "kind": "fuel",
+   "name": "Vinton",
+   "mp": 112.99,
+   "access_class": "detour_access",
+   "closure": {
+    "from_mp": 112.4,
+    "to_mp": 115.0,
+    "reason": "Partial closure",
+    "detour": "MP 115-121.4 open via US 220"
+   }
+  },
+  {
+   "kind": "fuel",
+   "name": "Vinton",
+   "mp": 113.89,
    "access_class": "detour_access",
    "closure": {
     "from_mp": 112.4,
