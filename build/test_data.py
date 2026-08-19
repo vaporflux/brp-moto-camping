@@ -9,7 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from brp import junctions as J, mp as M, network as N, stops as S  # noqa: E402
+from brp import junctions as J, mp as M, network as N, places as P, stops as S  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
@@ -112,6 +112,46 @@ def main():
     check("no phantom Virginia gap from mis-grading the MP 63.7 bridge detour",
           not any(abs(g["from_mp"] - 45.6) < 0.1 and g["gap_mi"] > 40
                   for g in S.fuel_gaps(fuel, net)))
+
+    print("places: three sources, provenance kept")
+    curated_raw = json.load(open(f"{DATA}/campgrounds.json"))
+    places = P.build(model, net, curated_raw, None)
+    check("works with no OSM file present", len(places) == 32, str(len(places)))
+    check("every curated place keeps its provenance",
+          all(p["source"] == "curated" for p in places))
+    check("curated places are verified for both amenities",
+          all(p["showers"] is True and p["toilets"] is True for p in places))
+
+    # Amenity flags are three-state. Treating "nobody has looked" as "no" would hide real
+    # campgrounds, which is the failure that makes crowd-sourced data feel useless.
+    fake_osm = {"places": [
+        {"osm_id": "n1", "name": "Tagged Yes", "kind": "campground", "lat": 35.5, "lon": -82.5,
+         "mp": 390.0, "off_parkway_mi": 1.0, "showers": True, "toilets": True},
+        {"osm_id": "n2", "name": "Tagged No", "kind": "campground", "lat": 35.51, "lon": -82.51,
+         "mp": 391.0, "off_parkway_mi": 2.0, "showers": False, "toilets": None},
+        {"osm_id": "n3", "name": "Untagged Place", "kind": "hotel", "lat": 35.52, "lon": -82.52,
+         "mp": 392.0, "off_parkway_mi": 3.0, "showers": None, "toilets": None},
+        # Same name and position as a curated entry: must not double up.
+        {"osm_id": "n4", "name": curated_raw[0]["name"], "kind": "campground",
+         "lat": curated_raw[0]["lat"], "lon": curated_raw[0]["lon"],
+         "mp": curated_raw[0]["mp"], "off_parkway_mi": 1.0, "showers": None, "toilets": None},
+    ]}
+    merged = P.build(model, net, curated_raw, fake_osm)
+    by_name = {p["name"]: p for p in merged}
+    check("OSM places are merged in", len(merged) == 35, str(len(merged)))
+    check("a duplicate of a curated place is dropped, curated wins",
+          by_name[curated_raw[0]["name"]]["source"] == "curated")
+    check("'nobody has looked' stays None, never False",
+          by_name["Untagged Place"]["showers"] is None)
+    check("a recorded absence stays False",
+          by_name["Tagged No"]["showers"] is False)
+    check("hotels come through as their own kind",
+          by_name["Untagged Place"]["kind"] == "hotel")
+    summ = P.summary(merged)
+    # 32 curated + the one OSM row tagged yes; one untagged row unknown; one recorded
+    # absence; the duplicate never made it in.
+    check("summary counts unknowns separately from absences",
+          summ["showers_yes"] == 33 and summ["showers_unknown"] == 1, str(summ))
 
     print("junctions")
     check("coverage is declared incomplete, not assumed complete",

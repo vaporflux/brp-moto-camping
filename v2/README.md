@@ -90,9 +90,46 @@ number held back. A plan can therefore fit with very little spare, so a thin arr
 stated as the headline — "it fits, but only just" — rather than the technically-true "no
 fuel stop needed".
 
-**Not in the dataset yet:** hotels, motels and other lodging. The 32 campgrounds are
-curated and verified for hot showers and flush toilets; there is no equivalent lodging
-source in `data/`, and the UI says so rather than pretending otherwise.
+### Where places come from
+
+Three sources, deliberately not interchangeable, and each row says which one it came from:
+
+| Source | Coverage | Offline | Cost |
+|---|---|---|---|
+| **curated** — `data/campgrounds.json` | 32, researched, verified for hot showers and flush toilets | yes | none |
+| **osm** — `data/osm_places.json` | wide: campgrounds, hotels, motels, hostels within 25 mi | yes | none |
+| **google** — live via `api/places.js` | best, and current | **no** | per request |
+
+Run the OSM pull once and it is baked in forever:
+
+```
+python3 build/fetch_osm.py --radius 25   # -> data/osm_places.json
+python3 build/derive.py && python3 build/build_v2.py
+```
+
+The app works before you ever run it — `places.py` handles a missing OSM file, and step 2
+says the list is curated-only until you widen it.
+
+Google is a supplement, never a dependency: a button in step 2, results held in memory for
+the session only. Google's terms restrict retaining Places content, so nothing is written
+to `localStorage` or into the bundle.
+
+**Amenity flags are three-state and the filters respect it.** `true` means someone recorded
+it, `false` means someone recorded its absence, `null` means nobody has looked. Treating
+`null` as `false` would hide real campgrounds — the failure that makes crowd-sourced data
+feel useless. "Has showers" keeps only places recorded as having them; everything else
+shows *Showers unknown* rather than being silently dropped.
+
+### The one piece of server-side code
+
+`api/places.js` exists because a Vercel environment variable is only a secret if the code
+reading it runs on Vercel. A static page's JavaScript cannot read one, and inlining it at
+build time puts the key in the page source. So the key lives in the function and the
+browser never sees it.
+
+Set `GOOGLE_PLACES_API_KEY` in the Vercel project's environment variables, and restrict the
+key to the Places API in the Google Cloud console as well. The endpoint allows only the
+place types this planner uses — without that it is an open proxy onto a billable account.
 
 ## Behaviour worth knowing before you change it
 

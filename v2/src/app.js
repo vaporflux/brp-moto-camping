@@ -23,7 +23,11 @@
     accessMp: null,           // chosen Parkway entry; null = let the planner pick
     finish: 'home',           // 'home' = round trip, 'other' = a different end point
     endPoint: null,           // {lat, lon, label} when finish === 'other'
-    destFilter: 'all',        // step 2 filter chip
+    stayKind: 'all',          // all | campground | hotel
+    stayShowers: false,        // only places TAGGED as having showers
+    stayToilets: false,
+    stayWithinMi: 15,          // miles off the Parkway
+    googleResults: null,       // live Google Places hits, never persisted
     tab: 'plan',
     filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
     search: '',
@@ -336,21 +340,26 @@
     return sec;
   }
 
-  /* ---- input 2: where you are camping ------------------------------------------
+  /* ---- input 2: where you are staying -------------------------------------------
    *
-   * Everything is searchable and filterable here. An earlier version showed six rows and
-   * sent the rider to the Browse tab for the rest, which is a strange thing to ask of
-   * someone halfway through filling in a form.
+   * Three sources feed this list and they are not interchangeable, so the row says which
+   * one it came from. Curated entries are researched and verified; OSM entries are wide
+   * but patchily tagged; Google entries are live and disappear when the signal does.
+   *
+   * Amenity filters are strict about a subtlety that matters: OSM records "has showers",
+   * "no showers", and "nobody has said". Treating the third as "no" hides real campgrounds,
+   * so filtering on showers keeps only places actually tagged yes, and everything else
+   * shows its amenities as unknown rather than absent.
    */
   function fieldDestination() {
     const sec = el('div', 'section');
-    sec.append(stepHead('2', 'Camping at'));
+    sec.append(stepHead('2', 'Staying at'));
 
     state.stops.forEach((st, i) => {
       const row = el('div', 'picked');
       const body = el('div', 's-body');
       body.append(el('div', 's-name',
-        `${st.name}${state.stops.length > 1 ? `  ·  night ${i + 1}` : ''}`));
+        `${st.name}${state.stops.length > 1 ? `  \u00b7  night ${i + 1}` : ''}`));
       body.append(el('div', 's-meta',
         `MP ${st.mp.toFixed(1)}${st.label ? ' \u00b7 ' + st.label : ''}`));
       row.append(body);
@@ -362,8 +371,7 @@
     });
 
     if (state.stops.length && !state.addingStop) {
-      const more = el('button', 'btn sm ghost',
-        '+ Add a second campsite for another night');
+      const more = el('button', 'btn sm ghost', '+ Add another night');
       more.style.marginTop = '8px';
       more.onclick = () => { state.addingStop = true; render(); };
       sec.append(more);
@@ -372,76 +380,98 @@
 
     const input = el('input');
     input.type = 'text';
-    input.placeholder = 'Search all 32 campgrounds by name, town or milepost\u2026';
-    input.setAttribute('aria-label', 'Search campgrounds');
+    input.placeholder = 'Search by name, town or milepost\u2026';
+    input.setAttribute('aria-label', 'Search places to stay');
     input.value = state.destQuery || '';
     sec.append(input);
 
-    const chips = el('div', 'chip-row');
-    chips.style.margin = '9px 0';
-    const FILTERS = [
-      ['all', 'All'], ['top', 'Top picks'], ['moto', 'Moto camps'],
-      ['koa', 'KOA'], ['near', 'Within 2 mi of the Parkway'], ['open', 'Reachable from the Parkway']
-    ];
-    FILTERS.forEach(([key, label]) => {
-      const c = el('button', `chip${state.destFilter === key ? ' on' : ''}`, label);
-      c.onclick = () => { state.destFilter = key; render(); };
-      chips.append(c);
-    });
-    sec.append(chips);
+    const kindRow = el('div', 'chip-row');
+    kindRow.style.margin = '9px 0 6px';
+    for (const [key, label] of [['all', 'Anywhere'], ['campground', 'Campgrounds'],
+                                ['hotel', 'Hotels & motels']]) {
+      const c = el('button', `chip${state.stayKind === key ? ' on' : ''}`, label);
+      c.onclick = () => { state.stayKind = key; render(); };
+      kindRow.append(c);
+    }
+    sec.append(kindRow);
+
+    const amenityRow = el('div', 'chip-row');
+    amenityRow.style.marginBottom = '6px';
+    for (const [key, label, hint] of [
+      ['stayShowers', 'Has showers', 'Only places recorded as having showers'],
+      ['stayToilets', 'Has toilets', 'Only places recorded as having toilets']
+    ]) {
+      const c = el('button', `chip${state[key] ? ' on' : ''}`, label);
+      c.title = hint;
+      c.onclick = () => { state[key] = !state[key]; render(); };
+      amenityRow.append(c);
+    }
+    sec.append(amenityRow);
+
+    const distRow = el('div', 'chip-row');
+    for (const mi of [2, 5, 10, 15, 999]) {
+      const label = mi === 999 ? 'Any distance' : `Within ${mi} mi`;
+      const c = el('button', `chip${state.stayWithinMi === mi ? ' on' : ''}`, label);
+      c.title = 'Straight-line distance from the Parkway';
+      c.onclick = () => { state.stayWithinMi = mi; render(); };
+      distRow.append(c);
+    }
+    sec.append(distRow);
 
     const count = el('div', 'tiny');
+    count.style.marginTop = '8px';
     const list = el('div', 'scroller');
     sec.append(count, list);
 
     const matches = () => {
       const q = (state.destQuery || '').trim().toLowerCase();
-      return D.campgrounds
-        .filter(c => !state.stops.some(st => st.id === `camp-${c.id}`))
-        .filter(c => {
-          switch (state.destFilter) {
-            case 'top': return c.tier === 'top';
-            case 'moto': return !!c.moto;
-            case 'koa': return /koa/i.test(c.name);
-            case 'near': return (c.off_parkway_mi || 0) <= 2;
-            case 'open': return c.reachable_from_parkway;
-            default: return true;
-          }
-        })
+      const pool = [...(D.places || []), ...(state.googleResults || [])];
+      return pool
+        .filter(c => !state.stops.some(st => st.id === c.id))
+        .filter(c => state.stayKind === 'all' || c.kind === state.stayKind)
+        .filter(c => !state.stayShowers || c.showers === true)
+        .filter(c => !state.stayToilets || c.toilets === true)
+        .filter(c => (c.off_parkway_mi ?? 0) <= state.stayWithinMi)
         .filter(c => !q || c.name.toLowerCase().includes(q)
                         || String(c.mp).includes(q)
+                        || (c.address || '').toLowerCase().includes(q)
                         || (c.food || '').toLowerCase().includes(q)
-                        || (c.access || '').toLowerCase().includes(q)
-                        || (c.state || '').toLowerCase() === q);
+                        || (c.access || '').toLowerCase().includes(q));
     };
 
     const draw = () => {
       list.textContent = '';
       const rows = matches();
-      count.textContent = `${rows.length} of ${D.campgrounds.length} campgrounds`;
+      const total = (D.places || []).length + (state.googleResults || []).length;
+      count.textContent = `${rows.length} of ${total} places`
+        + (D.has_osm ? '' : ' \u00b7 curated list only, run build/fetch_osm.py to widen it');
       if (!rows.length) {
-        list.append(el('div', 'empty', 'Nothing matches. Try clearing the filter.'));
+        list.append(el('div', 'empty', 'Nothing matches. Loosen a filter, or widen the '
+                                     + 'distance.'));
         return;
       }
-      rows.forEach(c => {
+      rows.slice(0, 300).forEach(c => {
         const b = el('button', 'row');
-        b.append(el('div', 'mp', `MP ${c.mp}`));
+        b.append(el('div', 'mp', c.mp != null ? `MP ${c.mp.toFixed(0)}` : ''));
         const body = el('div', 'body');
         body.append(el('div', 'name', c.name));
-        body.append(el('div', 'meta', [c.price, c.season,
-          c.off_parkway_mi ? `${c.off_parkway_mi} mi off` : null].filter(Boolean).join(' \u00b7 ')));
+        body.append(el('div', 'meta', [
+          c.price, c.season, c.address,
+          c.off_parkway_mi != null ? `${c.off_parkway_mi} mi off` : null
+        ].filter(Boolean).join(' \u00b7 ')));
         const badges = el('div', 'badges');
+        if (c.kind === 'hotel') badges.append(el('span', 'badge info', 'Lodging'));
         if (c.moto) badges.append(el('span', 'badge moto', 'Moto camp'));
         if (c.tier === 'top') badges.append(el('span', 'badge ok', 'Top pick'));
-        if (!c.reachable_from_parkway) {
-          const bd = el('span', 'badge info', 'Off-Parkway access');
-          bd.title = c.blocking_closure ? c.blocking_closure.reason : '';
-          badges.append(bd);
-        }
+        if (c.showers === true) badges.append(el('span', 'badge ok', 'Showers'));
+        else if (c.showers === false) badges.append(el('span', 'badge danger', 'No showers'));
+        else badges.append(el('span', 'badge warn', 'Showers unknown'));
+        if (c.source === 'osm') badges.append(el('span', 'badge', 'OSM'));
+        if (c.source === 'google') badges.append(el('span', 'badge', 'Google'));
         if (badges.childElementCount) body.append(badges);
         b.append(body);
         b.onclick = () => {
-          addStop(BRP.asStop(c));
+          addStop(BRP.placeStop(c));
           state.destQuery = '';
           state.addingStop = false;
           render();
@@ -452,10 +482,57 @@
     input.oninput = e => { state.destQuery = e.target.value; draw(); };
     draw();
 
-    sec.append(el('p', 'tiny',
-      'Only campgrounds verified to have hot showers and flush toilets are listed. Hotels '
-      + 'and other lodging are not in this dataset yet.'));
+    sec.append(googleSearchRow());
     return sec;
+  }
+
+  /* Live Google Places lookup. Optional by design: it needs signal and a configured key,
+   * and the rest of the planner does not. Results are session-only -- Google's terms
+   * restrict retaining Places content, so nothing is written to localStorage or the
+   * bundle. */
+  function googleSearchRow() {
+    const wrap = el('div');
+    wrap.style.marginTop = '10px';
+    const row = el('div', 'btn-row');
+    const btn = el('button', 'btn sm ghost', 'Also search Google near the Parkway');
+    const status = el('div', 'tiny');
+    status.style.marginTop = '6px';
+    row.append(btn);
+    if (state.googleResults) {
+      const clear = el('button', 'btn sm ghost', 'Clear Google results');
+      clear.onclick = () => { state.googleResults = null; render(); };
+      row.append(clear);
+    }
+    wrap.append(row, status);
+
+    btn.onclick = async () => {
+      // Search around the Parkway near where the rider is heading, not around their house.
+      const anchor = state.stops.length ? state.stops[state.stops.length - 1]
+                   : (state.start ? { mp: null, lat: state.start.lat, lon: state.start.lon } : null);
+      if (!anchor) { status.textContent = 'Set a starting point first.'; return; }
+      const [lat, lon] = anchor.mp != null ? BRP.coordAtMp(anchor.mp) : [anchor.lat, anchor.lon];
+      status.textContent = 'Searching Google\u2026';
+      try {
+        const type = state.stayKind === 'campground' ? 'campground' : 'lodging';
+        const radius = Math.min(state.stayWithinMi, 25) * 1609;
+        const res = await fetch(`/api/places?lat=${lat}&lon=${lon}`
+                              + `&radius_m=${Math.round(radius)}&type=${type}`);
+        const data = await res.json();
+        if (!res.ok) { status.textContent = data.error || 'Google search failed.'; return; }
+        state.googleResults = (data.places || []).map(g => {
+          const near = BRP.nearestVertex(g.lat, g.lon);
+          return { ...g, id: `google-${g.id}`,
+                   kind: type === 'campground' ? 'campground' : 'hotel',
+                   mp: near.mp, off_parkway_mi: Math.round(near.distance * 100) / 100,
+                   showers: null, toilets: null };
+        });
+        render();
+      } catch (e) {
+        status.textContent = 'Google search needs a connection. Everything already listed '
+                           + 'works offline.';
+      }
+    };
+    return wrap;
   }
 
   /* ---- input 3: how you ride ---------------------------------------------------- */
