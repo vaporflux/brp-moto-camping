@@ -56,7 +56,7 @@ def main():
     with open(driver, "w") as f:
         f.write(DRIVER)
     env = {**os.environ, "CHROME": CHROME,
-           "PAGE": os.path.join(ROOT, "v2", "index.html"),
+           "PAGE": os.path.join(ROOT, "index.html"),
            "NODE_PATH": os.path.join(scratch, "node_modules")}
     try:
         raw = subprocess.run(["node", driver], capture_output=True, text=True,
