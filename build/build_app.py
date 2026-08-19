@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
-"""Inline v2/src/* into the deployed index.html at the repo root.
+"""Inline app/src/* into the deployed index.html at the repo root.
 
 The deploy is one static file with no build step, which is what keeps the planner working
 from a phone in a parking lot with no signal. This generator runs offline, in the repo --
-source stays editable under v2/src/, the artifact stays deployable.
+source stays editable under app/src/, the artifact stays deployable.
 
 The output is the repo-root index.html, which is what Vercel serves at /. There is
 deliberately no second copy under v2/: two generated artifacts drift, and only one of
 them is ever the thing that deployed.
 
-v1 is no longer part of the build. Its self-contained page remains at v1/index.html and
-stays reachable at /v1/, but nothing here depends on it.
+There is one app and one deployed file. The old v1 map is gone from the tree -- it lives
+in git history if it is ever wanted, and keeping a second version around invited exactly
+the "which one is live?" confusion this layout exists to prevent.
 
-Run: python3 build/build_v2.py
+Run: python3 build/build_app.py
 """
 import json
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "v2", "src")
+SRC = os.path.join(ROOT, "app", "src")
 OUT = os.path.join(ROOT, "index.html")
 
 

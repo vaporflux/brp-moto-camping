@@ -22,8 +22,8 @@ It's one self-contained file. Open `index.html` in any browser, or host it anywh
 serves static files. Leaflet and all the data are embedded, so the page, the planner and
 the GPX export all work with no connection — only the background map tiles need signal.
 
-`index.html` is **generated**. Edit `v2/src/`, then run `python3 build/build_v2.py` and
-commit the result. See `v2/README.md`.
+`index.html` is **generated**. Edit `app/src/`, then run `python3 build/build_app.py` and
+commit the result. See `app/README.md`.
 
 The previous version is still at `v1/index.html` (`/v1/` when deployed).
 

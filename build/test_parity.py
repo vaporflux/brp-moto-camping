@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prove the browser port matches the Python reference. Run: python3 build/test_parity.py
 
-v2/src/route.js and v2/src/gpx.js reimplement build/brp/route.py and build/brp/gpx.py so
+app/src/route.js and app/src/gpx.js reimplement build/brp/route.py and build/brp/gpx.py so
 the planner works offline with no server. Two implementations of subtle logic drift, and
 the tests only cover the Python one, so this drives the real page in Chromium and
 compares its GPX byte for byte against the Python exporter's.

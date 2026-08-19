@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from brp import junctions as J
+from brp import places as P
 from brp import mp as M
 from brp import network as N
 from brp import stops as S
@@ -48,6 +49,8 @@ def main():
     jx = J.load(model, DATA)
 
     campgrounds = S.build_campgrounds(model, net, json.load(open(f"{DATA}/campgrounds.json")))
+    osm = P.load_osm(DATA)
+    all_places = P.build(model, net, json.load(open(f"{DATA}/campgrounds.json")), osm)
     fuel = S.build_fuel(model, net, json.load(open(f"{DATA}/fuel.json")))
     closures_raw = json.load(open(f"{DATA}/closures.json"))
 
@@ -139,6 +142,9 @@ def main():
         "dead_ends": bundle["dead_ends"],
         "closures": bundle["closures"],
         "campgrounds": campgrounds,
+        "places": all_places,
+        "places_summary": P.summary(all_places),
+        "has_osm": osm is not None,
         "fuel": fuel,
         "junctions": jx,
         "junction_coverage": bundle["junction_coverage"],
@@ -151,6 +157,8 @@ def main():
 
     size = os.path.getsize(f"{OUT}/planner-data.json")
     print(f"planner-data.json   {size/1024:.0f} KB")
+    print(f"  places {len(all_places)} "
+          f"({'with OSM' if osm else 'curated only — run build/fetch_osm.py to expand'})")
     print(f"  segments {len(net.segments)}  components {len(net.components)}  "
           f"campgrounds {len(campgrounds)}  fuel {len(fuel)}  junctions {len(jx)}")
     print(f"  milepost LOO accuracy: {bundle['milepost_model']['accuracy']}")

@@ -121,6 +121,24 @@ const BRP = (() => {
     };
   }
 
+  /* A unified place record (curated, OSM, or Google) as a routable stop. */
+  function placeStop(rec) {
+    const near = rec.mp != null ? null : nearestVertex(rec.lat, rec.lon);
+    return {
+      id: rec.id || `place-${rec.lat.toFixed(4)},${rec.lon.toFixed(4)}`,
+      mp: rec.mp != null ? rec.mp : near.mp,
+      lat: rec.lat, lon: rec.lon,
+      kind: rec.kind === 'hotel' ? 'town' : 'campground',
+      name: rec.name,
+      label: rec.price || rec.address || (rec.kind === 'hotel' ? 'Lodging' : 'Campground'),
+      comment: `MP ${(rec.mp != null ? rec.mp : near.mp).toFixed(1)} - ${rec.price || rec.name}`,
+      offParkwayMi: rec.off_parkway_mi != null ? rec.off_parkway_mi
+                                              : Math.round(near.distance * 100) / 100,
+      placeSource: rec.source,
+      ref: rec
+    };
+  }
+
   function customStop(lat, lon, name) {
     const near = nearestVertex(lat, lon);
     return {
@@ -134,6 +152,6 @@ const BRP = (() => {
   return {
     data: D, haversine, indexAtMp, coordAtMp, nearestVertex,
     segmentAtMp, isOpen, componentAtMp, componentForStop, connected, blockingClosures,
-    asStop, customStop
+    asStop, customStop, placeStop
   };
 })();
