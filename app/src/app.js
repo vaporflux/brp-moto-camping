@@ -561,7 +561,13 @@
 
     const matches = () => {
       const q = (state.destQuery || '').trim().toLowerCase();
-      const pool = [...(D.places || []), ...(state.googleResults || [])];
+      // Live Google results belong IN the list at their own milepost, not appended after
+      // it. Concatenating them left the rider scrolling MP 0 to 469 and then starting over
+      // at MP 0 again for the Google ones. And a result the baked list already carries --
+      // most of them, now that every place is enriched -- is a duplicate, not a find.
+      const known = new Set((D.places || []).map(c => c.google_id).filter(Boolean));
+      const fresh = (state.googleResults || []).filter(c => !known.has(c.google_id));
+      const pool = [...(D.places || []), ...fresh].sort((a, b) => (a.mp ?? 0) - (b.mp ?? 0));
       return pool
         .filter(c => !state.stops.some(st => st.id === c.id))
         // KOA is a brand, not a kind: it matches on the name across every source, so a
@@ -755,6 +761,9 @@
    * larger circles. Results are session-only -- Google's terms restrict retaining Places
    * content, so nothing is written to localStorage or the bundle.
    */
+  const knownGoogleIds = () =>
+    new Set((D.places || []).map(c => c.google_id).filter(Boolean));
+
   function googleSearchRow() {
     const wrap = el('div');
     wrap.style.marginTop = '10px';
@@ -789,7 +798,7 @@
         ? 'campground' : 'lodging';
       const radiusM = Math.round(withinMi * 1609);
       const found = new Map();
-      let failed = null;
+      let failed = null, raw = 0;
       for (let i = 0; i < samples.length; i++) {
         status.textContent = `Searching the Parkway… ${i + 1} of ${samples.length}`;
         const [lat, lon] = samples[i];
@@ -797,11 +806,19 @@
           const res = await fetch(`/api/places?lat=${lat}&lon=${lon}`
                                 + `&radius_m=${radiusM}&type=${type}`);
           const data = await res.json();
-          if (!res.ok) { failed = data.error || 'Google search failed.'; break; }
+          // Say what went wrong, in words, including the status code. "Nothing came up"
+          // reads the same whether the key is missing, the type matched nothing, or every
+          // result was filtered out afterwards -- and those need different fixes.
+          if (!res.ok) {
+            failed = `${data.error || 'Google search failed'} (HTTP ${res.status}`
+                   + `${data.detail ? ': ' + String(data.detail).slice(0, 120) : ''})`;
+            break;
+          }
+          raw += (data.places || []).length;
           (data.places || []).forEach(g => {
             if (found.has(g.id)) return;      // circles overlap; the same hotel recurs
             const n = BRP.nearestVertex(g.lat, g.lon);
-            found.set(g.id, { ...g, id: `google-${g.id}`,
+            found.set(g.id, { ...g, id: `google-${g.id}`, google_id: g.id,
                               kind: type === 'campground' ? 'campground' : 'hotel',
                               mp: n.mp, off_parkway_mi: Math.round(n.distance * 100) / 100,
                               showers: null, toilets: null });
@@ -815,13 +832,31 @@
       const hits = [...found.values()]
         .filter(h => h.off_parkway_mi <= state.stayWithinMi)
         .sort((a, b) => a.mp - b.mp);
+      const tooFar = found.size - hits.length;
+      const already = hits.filter(h => knownGoogleIds().has(h.google_id)).length;
       state.googleResults = hits;
-      state.googleNote = failed
-        ? `${failed} ${found.size ? `Kept the ${hits.length} found before it stopped.` : ''}`
-        : hits.length
-        ? `Google found ${hits.length} within ${state.stayWithinMi} mi of the Parkway, `
-          + `from MP ${hits[0].mp.toFixed(0)} to MP ${hits[hits.length - 1].mp.toFixed(0)}.`
-        : 'Google found nothing within that distance of the Parkway. Try widening it.';
+
+      // Every count that could explain an empty list, named. Nearly all of these places
+      // are already in the baked list now that it is enriched, so "0 new" is the normal
+      // answer and needs to read as success rather than as a failure.
+      if (failed) {
+        state.googleNote = `${failed}. `
+          + (found.size ? `Kept the ${hits.length} found before it stopped.` : 'Nothing kept.');
+      } else if (!raw) {
+        state.googleNote = `${samples.length} searches, and Google returned no ${what} `
+          + `anywhere along the Parkway. That is a Google-side result, not a connection `
+          + `problem — try a wider distance, or a different category.`;
+      } else {
+        const parts = [`${samples.length} searches found ${raw} results, `
+                     + `${found.size} distinct`];
+        if (tooFar) parts.push(`${tooFar} beyond ${state.stayWithinMi} mi`);
+        if (already) parts.push(`${already} already in the list`);
+        const brandNew = hits.length - already;
+        parts.push(brandNew > 0
+          ? `${brandNew} new, now merged in at their mileposts`
+          : 'nothing new — the list already has them all');
+        state.googleNote = parts.join(' · ') + '.';
+      }
       render();
     };
     return wrap;
