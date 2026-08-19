@@ -54,38 +54,45 @@ id="pane-x">`, a `renderX()`, and a line in `render()`.
 
 ## The Plan tab
 
-Three inputs and an itinerary. Nothing the planner works out is offered as a choice.
+Four numbered steps and an itinerary. Nothing the planner works out is offered as a choice.
 
 1. **Starting from** — address, town, `lat, lon`, or browser location.
-2. **Camping at** — campgrounds searched inline. No trip to the Browse tab.
+2. **Camping at** — all 32 campgrounds, searchable and filterable in place (Top picks,
+   Moto camps, KOA, within 2 mi of the Parkway, reachable from the Parkway). Add a second
+   campsite for a second night.
 3. **How you ride** — miles on a tank, max miles per day, furthest you will ride off the
    Parkway for fuel.
+4. **Finishing at** — back home (round trip) or somewhere else.
 
-Everything below that is the answer: which access point, where fuel comes from, what each
-leg costs. An earlier version exposed access-point rankings and made the rider click fuel
-stops onto the trip. That put the machinery in front of the answer, and it was the wrong
-shape — a rider deciding a fuel stop has no idea where they will be in the trip when they
-reach it.
+Everything below is the answer: where you join the Parkway, where fuel comes from, how
+much is in the tank at each point, where you leave the Parkway, and the ride to the finish.
 
-**Access point is never a choice.** Always the nearest entry that can actually reach the
-destination, so the ride in is short and the Parkway miles are long. Ranking by total
-distance instead is defensible arithmetic and useless in practice: Charlotte→Cherokee
-enters at MP 469.1 and rides 0.1 mi of Parkway.
+**Fuel is simulated across the whole journey, never leg by leg.** A campsite sells no fuel
+and neither does the Parkway, so the rider leaves camp with exactly what they arrived on.
+Planning each leg from a full tank quietly refuels the bike overnight and yields a plan
+that fails on the way home. `plan_journey` walks the entire waypoint list — entry,
+overnights, exit — as one distance line, reversing direction where a round trip does, and
+reports the tank at every waypoint.
 
-**Fuel is never a choice.** Stops are found and placed. Greedy furthest-reachable, which
-minimises stops. A detour burns range both ways — a 15 mi detour costs 30 mi of tank —
-which is what makes MP 411.8 a trap.
+**Access and exit points are chosen, not offered.** Entry is the nearest one that can
+actually reach the campsite; exit is the nearest one to wherever the trip finishes. Both
+keep the ride-in and ride-out short so the Parkway miles run long. Ranking by total
+distance instead is defensible arithmetic and useless in practice — Charlotte→Cherokee
+would enter at MP 469.1 and ride 0.1 mi of Parkway.
 
-**Arriving with enough to get back out** is a hard requirement, not advice. A campsite on
-the Parkway sells no fuel and neither does the Parkway, so the plan reserves enough range
-at camp to reach the nearest pump. Without it, a tank that "just reaches" camp looks fine
-and strands you in the morning.
+**Arriving with enough to get back out** is a hard constraint. The plan reserves enough
+range at the end of the Parkway leg to reach the nearest pump, computed in either
+direction with the detour included.
 
 **There is no safety-percentage reserve.** "Miles on a tank" is already a rider's
 conservative real figure, and the exit-fuel rule is a concrete margin rather than a round
-number held back. The consequence is that a plan can fit on one tank with very little to
-spare, so a thin arrival is stated as the headline — "it fits, but only just, you arrive
-with about 3 mi left" — instead of the technically-true "no fuel stop needed".
+number held back. A plan can therefore fit with very little spare, so a thin arrival is
+stated as the headline — "it fits, but only just" — rather than the technically-true "no
+fuel stop needed".
+
+**Not in the dataset yet:** hotels, motels and other lodging. The 32 campgrounds are
+curated and verified for hot showers and flush toilets; there is no equivalent lodging
+source in `data/`, and the UI says so rather than pretending otherwise.
 
 ## Behaviour worth knowing before you change it
 

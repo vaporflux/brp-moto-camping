@@ -143,7 +143,8 @@ def main():
     roomy = A.plan_fuel(fuel, 382.5, 408.6, 200, component=2, max_detour_mi=8)
     check("a roomy tank still needs no stop", roomy["ok"] and not roomy["stops"])
     check("the plan says what the withheld range is for",
-          any("get back out" in n for n in roomy["notes"]), str(roomy["notes"]))
+          any("keeps that much in the tank" in n for n in roomy["notes"]),
+          str(roomy["notes"]))
 
     print("fuel planning refuses rather than guessing")
     # Long Parkway run, small tank, and the only mid-gap exit excluded by detour limit.
@@ -166,6 +167,32 @@ def main():
               abs(plan["arrive_with_mi"] - expected) < 0.05,
               f"got {plan['arrive_with_mi']} expected {expected:.1f}")
         check("the stop actually carries a detour cost", last["detour_mi"] > 0)
+
+    print("a journey is simulated end to end, not leg by leg")
+    # A campsite sells no fuel: the rider leaves camp with exactly what they arrived on.
+    # Planning each leg from a full tank refuels the bike overnight and produces a plan
+    # that fails on the way home.
+    rt = A.plan_journey(fuel, [382.5, 443.1, 382.5], 200, component=2, max_detour_mi=8)
+    check("a round trip plans as one journey", rt["ok"])
+    check("its distance counts both directions",
+          abs(rt["parkway_mi"] - 2 * (443.1 - 382.5)) < 0.2, str(rt["parkway_mi"]))
+    tanks = [t["tank_mi"] for t in rt["tank_at"]]
+    check("the tank is tracked at every waypoint", len(tanks) == 3, str(tanks))
+    check("the tank falls across the overnight rather than refilling",
+          tanks[0] > tanks[1] > tanks[2], str(tanks))
+    thin = A.plan_journey(fuel, [382.5, 443.1, 382.5], 130, component=2, max_detour_mi=8)
+    per_leg = A.plan_journey(fuel, [382.5, 443.1], 130, component=2, max_detour_mi=8)
+    check("planning one leg at a time hides what the return costs",
+          len(per_leg["stops"]) <= len(thin["stops"]),
+          f"leg {len(per_leg['stops'])} vs journey {len(thin['stops'])}")
+
+    print("choosing where to come off the Parkway")
+    home = charlotte_pt()
+    outs = A.best_exit_points(model, net, jx, home, 443.1)
+    check("exit points are ranked by how short the ride off is",
+          [o["ride_out_mi"] for o in outs] == sorted(o["ride_out_mi"] for o in outs))
+    check("exits stay in the same component as the rider",
+          all(o["component"] == net.segment_at_mp(443.1).component for o in outs))
 
     print("greedy picks the furthest reachable pump")
     if plan["ok"] and plan["stops"]:

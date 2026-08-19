@@ -21,6 +21,9 @@
     tankMi: 200,              // usable miles on a tank. NOT a GSA assumption.
     start: null,              // {lat, lon, label} — where the rider actually begins
     accessMp: null,           // chosen Parkway entry; null = let the planner pick
+    finish: 'home',           // 'home' = round trip, 'other' = a different end point
+    endPoint: null,           // {lat, lon, label} when finish === 'other'
+    destFilter: 'all',        // step 2 filter chip
     tab: 'plan',
     filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
     search: '',
@@ -36,7 +39,8 @@
         name: state.name, stops: state.stops, maxMilesPerDay: state.maxMilesPerDay,
         maxFuelDetourMi: state.maxFuelDetourMi, checklist: state.checklist,
         device: state.device, tankMi: state.tankMi,
-        start: state.start, accessMp: state.accessMp
+        start: state.start, accessMp: state.accessMp,
+        finish: state.finish, endPoint: state.endPoint
       }));
     } catch (e) { /* private mode: the trip still works, it just will not persist */ }
   }
@@ -146,33 +150,47 @@
    * Returns null until there is enough to compute — a start and at least one stop. */
   function itinerary() {
     if (!state.start || !state.stops.length) return null;
-    const dest = state.stops[state.stops.length - 1];
     const startLL = [state.start.lat, state.start.lon];
+    const dest = state.stops[state.stops.length - 1];
 
     let options = [];
     try {
       // Always "soonest": the point of the trip is to be ON the Parkway, so the ride in
-      // is overhead to minimise. Ranking by total distance instead can enter a hundred
-      // yards from the campsite and ride no Parkway at all.
+      // is overhead. Ranking by total distance can enter a hundred yards from the
+      // campsite and ride no Parkway at all.
       options = Access.bestAccessPoints(startLL, state.stops[0].mp, 4, 'soonest');
     } catch (e) {
       return { error: e.message };
     }
     if (!options.length) {
-      return { error: 'No Parkway access point can reach that destination in 2026 — the '
+      return { error: 'No Parkway access point can reach that campsite in 2026 — the '
                     + 'Helene closures have the Parkway in three disconnected pieces.' };
     }
     const chosen = (state.accessMp != null
       && options.find(o => Math.abs(o.mp - state.accessMp) < 0.05)) || options[0];
 
+    // Where the ride finishes. Round trip goes home; otherwise a place they name. Either
+    // way the rider stays on the Parkway until the nearest exit to that end point, so the
+    // Parkway miles run as long as they can.
+    const endLL = state.finish === 'other' && state.endPoint
+      ? [state.endPoint.lat, state.endPoint.lon]
+      : startLL;
+    const endLabel = state.finish === 'other' && state.endPoint
+      ? state.endPoint.label : (state.start.label + ' (home)');
+    let exitPoint = null;
+    try {
+      exitPoint = Access.bestExitPoints(endLL, dest.mp, 1)[0] || null;
+    } catch (e) { exitPoint = null; }
+
     const component = BRP.componentForStop(state.stops[0]);
-    const fuel = Access.planFuel({
-      accessMp: chosen.mp, destMp: dest.mp, tankMi: state.tankMi,
-      approachLegMi: chosen.approachMi, maxDetourMi: state.maxFuelDetourMi, component
+    const waypoints = [chosen.mp, ...state.stops.map(st => st.mp)];
+    if (exitPoint) waypoints.push(exitPoint.mp);
+
+    const fuel = Access.planJourney({
+      waypoints, tankMi: state.tankMi, approachLegMi: chosen.approachMi,
+      maxDetourMi: state.maxFuelDetourMi, component
     });
 
-    // Is the rider closer to a stretch of Parkway that cannot reach their destination?
-    // Worth saying out loud rather than silently routing them 300 miles around.
     const allNearest = Access.accessPoints()
       .map(p => ({ ...p, d: Access.approachMi(startLL, [p.lat, p.lon]) }))
       .sort((a, b) => a.d - b.d)[0];
@@ -182,9 +200,9 @@
       + `connects.`
       : null;
 
-    return { chosen, options, fuel, dest, severedNote,
+    return { chosen, options, fuel, dest, severedNote, exitPoint, endLabel,
              approachMi: chosen.approachMi,
-             parkwayMi: Math.abs(dest.mp - chosen.mp) };
+             parkwayMi: fuel.parkwayMi != null ? fuel.parkwayMi : Math.abs(dest.mp - chosen.mp) };
   }
 
   function autoSplit() {
@@ -232,14 +250,14 @@
   function renderPlan() {
     const pane = $('#pane-plan');
     pane.textContent = '';
-    pane.append(fieldStart(), fieldDestination(), fieldLimits());
+    pane.append(fieldStart(), fieldDestination(), fieldLimits(), fieldFinish());
     pane.append(sectionItinerary());
   }
 
   /* ---- input 1: where you start ------------------------------------------------- */
   function fieldStart() {
     const sec = el('div', 'section');
-    sec.append(el('h2', null, '1 · Starting from'));
+    sec.append(stepHead('1', 'Starting from'));
 
     if (state.start) {
       const row = el('div', 'picked');
@@ -318,69 +336,109 @@
     return sec;
   }
 
-  /* ---- input 2: where you are going -------------------------------------------- */
+  /* ---- input 2: where you are camping ------------------------------------------
+   *
+   * Everything is searchable and filterable here. An earlier version showed six rows and
+   * sent the rider to the Browse tab for the rest, which is a strange thing to ask of
+   * someone halfway through filling in a form.
+   */
   function fieldDestination() {
     const sec = el('div', 'section');
-    sec.append(el('h2', null, '2 · Camping at'));
+    sec.append(stepHead('2', 'Camping at'));
 
-    if (state.stops.length) {
-      state.stops.forEach((st, i) => {
-        const row = el('div', 'picked');
-        const body = el('div', 's-body');
-        body.append(el('div', 's-name', st.name));
-        body.append(el('div', 's-meta',
-          `MP ${st.mp.toFixed(1)}${st.label ? ' \u00b7 ' + st.label : ''}`));
-        row.append(body);
-        const del = el('button', 'icon-btn danger', '\u2715');
-        del.title = 'Remove';
-        del.onclick = () => removeStop(i);
-        row.append(del);
-        sec.append(row);
-      });
-      const more = el('button', 'btn sm ghost', '+ Add another night');
+    state.stops.forEach((st, i) => {
+      const row = el('div', 'picked');
+      const body = el('div', 's-body');
+      body.append(el('div', 's-name',
+        `${st.name}${state.stops.length > 1 ? `  ·  night ${i + 1}` : ''}`));
+      body.append(el('div', 's-meta',
+        `MP ${st.mp.toFixed(1)}${st.label ? ' \u00b7 ' + st.label : ''}`));
+      row.append(body);
+      const del = el('button', 'icon-btn danger', '\u2715');
+      del.title = 'Remove this stop';
+      del.onclick = () => removeStop(i);
+      row.append(del);
+      sec.append(row);
+    });
+
+    if (state.stops.length && !state.addingStop) {
+      const more = el('button', 'btn sm ghost',
+        '+ Add a second campsite for another night');
       more.style.marginTop = '8px';
       more.onclick = () => { state.addingStop = true; render(); };
-      if (!state.addingStop) { sec.append(more); return sec; }
+      sec.append(more);
+      return sec;
     }
 
     const input = el('input');
     input.type = 'text';
-    input.placeholder = 'Search campgrounds\u2026';
-    input.setAttribute('aria-label', 'Destination campground');
+    input.placeholder = 'Search all 32 campgrounds by name, town or milepost\u2026';
+    input.setAttribute('aria-label', 'Search campgrounds');
     input.value = state.destQuery || '';
     sec.append(input);
 
-    const list = el('div');
-    list.style.marginTop = '6px';
-    sec.append(list);
+    const chips = el('div', 'chip-row');
+    chips.style.margin = '9px 0';
+    const FILTERS = [
+      ['all', 'All'], ['top', 'Top picks'], ['moto', 'Moto camps'],
+      ['koa', 'KOA'], ['near', 'Within 2 mi of the Parkway'], ['open', 'Reachable from the Parkway']
+    ];
+    FILTERS.forEach(([key, label]) => {
+      const c = el('button', `chip${state.destFilter === key ? ' on' : ''}`, label);
+      c.onclick = () => { state.destFilter = key; render(); };
+      chips.append(c);
+    });
+    sec.append(chips);
+
+    const count = el('div', 'tiny');
+    const list = el('div', 'scroller');
+    sec.append(count, list);
+
+    const matches = () => {
+      const q = (state.destQuery || '').trim().toLowerCase();
+      return D.campgrounds
+        .filter(c => !state.stops.some(st => st.id === `camp-${c.id}`))
+        .filter(c => {
+          switch (state.destFilter) {
+            case 'top': return c.tier === 'top';
+            case 'moto': return !!c.moto;
+            case 'koa': return /koa/i.test(c.name);
+            case 'near': return (c.off_parkway_mi || 0) <= 2;
+            case 'open': return c.reachable_from_parkway;
+            default: return true;
+          }
+        })
+        .filter(c => !q || c.name.toLowerCase().includes(q)
+                        || String(c.mp).includes(q)
+                        || (c.food || '').toLowerCase().includes(q)
+                        || (c.access || '').toLowerCase().includes(q)
+                        || (c.state || '').toLowerCase() === q);
+    };
 
     const draw = () => {
       list.textContent = '';
-      const q = (state.destQuery || '').trim().toLowerCase();
-      const matches = D.campgrounds
-        .filter(c => !state.stops.some(s => s.id === `camp-${c.id}`))
-        .filter(c => !q || c.name.toLowerCase().includes(q)
-                        || String(c.mp).includes(q) || (c.state || '').toLowerCase() === q)
-        .slice(0, q ? 8 : 6);
-      if (!matches.length) {
-        list.append(el('div', 'tiny', 'No campground matches that.'));
+      const rows = matches();
+      count.textContent = `${rows.length} of ${D.campgrounds.length} campgrounds`;
+      if (!rows.length) {
+        list.append(el('div', 'empty', 'Nothing matches. Try clearing the filter.'));
         return;
       }
-      matches.forEach(c => {
+      rows.forEach(c => {
         const b = el('button', 'row');
         b.append(el('div', 'mp', `MP ${c.mp}`));
         const body = el('div', 'body');
         body.append(el('div', 'name', c.name));
-        const bits = [c.price, c.moto ? 'Moto camp' : null,
-                      c.tier === 'top' ? 'Top pick' : null].filter(Boolean);
-        body.append(el('div', 'meta', bits.join(' \u00b7 ')));
+        body.append(el('div', 'meta', [c.price, c.season,
+          c.off_parkway_mi ? `${c.off_parkway_mi} mi off` : null].filter(Boolean).join(' \u00b7 ')));
+        const badges = el('div', 'badges');
+        if (c.moto) badges.append(el('span', 'badge moto', 'Moto camp'));
+        if (c.tier === 'top') badges.append(el('span', 'badge ok', 'Top pick'));
         if (!c.reachable_from_parkway) {
-          const badges = el('div', 'badges');
           const bd = el('span', 'badge info', 'Off-Parkway access');
           bd.title = c.blocking_closure ? c.blocking_closure.reason : '';
           badges.append(bd);
-          body.append(badges);
         }
+        if (badges.childElementCount) body.append(badges);
         b.append(body);
         b.onclick = () => {
           addStop(BRP.asStop(c));
@@ -393,13 +451,17 @@
     };
     input.oninput = e => { state.destQuery = e.target.value; draw(); };
     draw();
+
+    sec.append(el('p', 'tiny',
+      'Only campgrounds verified to have hot showers and flush toilets are listed. Hotels '
+      + 'and other lodging are not in this dataset yet.'));
     return sec;
   }
 
   /* ---- input 3: how you ride ---------------------------------------------------- */
   function fieldLimits() {
     const sec = el('div', 'section');
-    sec.append(el('h2', null, '3 · How you ride'));
+    sec.append(stepHead('3', 'How you ride'));
 
     const mk = (key, label, min, max, hint) => {
       const lab = el('label', 'field');
@@ -430,6 +492,77 @@
       + 'exits count. Raising it past 18 mi is what opens up MP 411.8 and closes the '
       + '49.5 mi Asheville-to-Balsam gap — at 36 mi of round trip.'));
     return sec;
+  }
+
+  /* ---- input 4: where the ride ends --------------------------------------------- */
+  function fieldFinish() {
+    const sec = el('div', 'section');
+    sec.append(stepHead('4', 'Finishing at'));
+
+    const chips = el('div', 'chip-row');
+    for (const [key, label] of [['home', 'Back home (round trip)'],
+                                ['other', 'Somewhere else']]) {
+      const c = el('button', `chip${state.finish === key ? ' on' : ''}`, label);
+      c.onclick = () => { state.finish = key; render(); };
+      chips.append(c);
+    }
+    sec.append(chips);
+
+    if (state.finish === 'other') {
+      if (state.endPoint) {
+        const row = el('div', 'picked');
+        row.style.marginTop = '9px';
+        const body = el('div', 's-body');
+        body.append(el('div', 's-name', state.endPoint.label));
+        row.append(body);
+        const clear = el('button', 'icon-btn danger', '\u2715');
+        clear.title = 'Change';
+        clear.onclick = () => { state.endPoint = null; render(); };
+        row.append(clear);
+        sec.append(row);
+      } else {
+        const row = el('div', 'btn-row');
+        row.style.marginTop = '9px';
+        const input = el('input');
+        input.type = 'text';
+        input.placeholder = 'Address or town to finish at';
+        input.setAttribute('aria-label', 'Finishing address');
+        const go = el('button', 'btn sm', 'Find');
+        go.style.flex = '0 0 auto';
+        row.append(input, go);
+        sec.append(row);
+        const status = el('div', 'tiny');
+        status.style.marginTop = '6px';
+        sec.append(status);
+        const lookup = async () => {
+          const q = input.value.trim();
+          if (!q) return;
+          status.textContent = 'Looking up\u2026';
+          try {
+            const hits = await Geocode.search(q);
+            if (!hits.length) { status.textContent = 'Nothing found.'; return; }
+            state.endPoint = { lat: hits[0].lat, lon: hits[0].lon, label: hits[0].label };
+            render();
+          } catch (e) {
+            status.textContent = 'Address lookup needs a connection. Type coordinates as '
+                               + '"lat, lon" instead.';
+          }
+        };
+        go.onclick = lookup;
+        input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); lookup(); } };
+      }
+    }
+    sec.append(el('p', 'tiny',
+      'You stay on the Parkway until the nearest exit to wherever you are finishing, so '
+      + 'the Parkway miles run as long as they can.'));
+    return sec;
+  }
+
+  function stepHead(n, title) {
+    const h = el('h2', 'step-head');
+    const badge = el('span', 'step-num', n);
+    h.append(badge, document.createTextNode(title));
+    return h;
   }
 
   /* ---- the answer --------------------------------------------------------------- */
@@ -472,8 +605,10 @@
     } else {
       fuelLine = `No fuel stop needed — you arrive with about ${f.arriveWithMi} mi to spare.`;
     }
-    summary.textContent = `~${c.approachMi} mi to reach the Parkway, then ${c.parkwayMi} mi `
-                        + `on it. ${fuelLine}`;
+    const rideOut = trip.exitPoint ? trip.exitPoint.rideOutMi : 0;
+    summary.textContent = `~${c.approachMi} mi in, ${trip.parkwayMi} mi on the Parkway`
+                        + (rideOut ? `, ~${rideOut} mi out` : '')
+                        + `. ${fuelLine}`;
     sec.append(summary);
     if (trip.severedNote) sec.append(el('div', 'alert warn', trip.severedNote));
     wrap.append(sec);
@@ -500,12 +635,37 @@
           detail, (tight || stop.grade === 'unconfirmed') ? 'warn' : null));
       });
     }
+    // Tank state at each waypoint comes from the journey simulation, so the figure shown
+    // at camp is what the rider actually has for the morning -- campsites sell no fuel.
+    const tankAt = (f.tankAt || []).reduce((m, t) => {
+      (m[t.mp.toFixed(1)] = m[t.mp.toFixed(1)] || []).push(t.tankMi); return m;
+    }, {});
+    const takeTank = mp => {
+      const k = mp.toFixed(1);
+      return tankAt[k] && tankAt[k].length ? tankAt[k].shift() : null;
+    };
+    takeTank(c.mp);   // the entry waypoint
+
     state.stops.forEach((st, i) => {
+      const t = takeTank(st.mp);
       const last = i === state.stops.length - 1;
-      steps.append(stepRow(`MP ${st.mp.toFixed(1)}`, st.name,
-        last ? `Arrive${f.ok ? ` with ~${f.arriveWithMi} mi in the tank` : ''}` : 'Overnight',
-        last ? 'ok' : null));
+      const detail = [
+        last && !trip.exitPoint ? 'Arrive' : (last ? 'Camp here' : `Overnight ${i + 1}`),
+        t != null ? `about ${t} mi of fuel in the tank` : null
+      ].filter(Boolean).join(' \u00b7 ');
+      steps.append(stepRow(`MP ${st.mp.toFixed(1)}`, st.name, detail, 'ok'));
     });
+
+    // Leaving the Parkway, and the ride to wherever the trip finishes.
+    if (trip.exitPoint) {
+      const t = takeTank(trip.exitPoint.mp);
+      steps.append(stepRow(`MP ${trip.exitPoint.mp}`,
+        `Leave the Parkway — ${trip.exitPoint.name}`,
+        [`${trip.exitPoint.parkwayMi} mi of Parkway from camp`,
+         t != null ? `about ${t} mi of fuel left` : null].filter(Boolean).join(' \u00b7 ')));
+      steps.append(stepRow('FINISH', trip.endLabel,
+        `Ride ~${trip.exitPoint.rideOutMi} mi from the Parkway to here`, 'ok'));
+    }
     wrap.append(steps);
 
     if (!f.ok) {
