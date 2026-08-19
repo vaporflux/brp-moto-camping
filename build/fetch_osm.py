@@ -3,6 +3,7 @@
 
     python3 build/fetch_osm.py            # writes data/osm_places.json
     python3 build/fetch_osm.py --radius 25
+    python3 build/fetch_osm.py --raw saved-overpass.json   # already downloaded
 
 Why this and not a live API: the result is baked into the page, so it keeps working in a
 gap with no signal. No key, no per-request cost, and the ODbL licence permits
@@ -107,11 +108,21 @@ def main():
                     help="miles from the Parkway centerline to include (default 25)")
     ap.add_argument("--relation", type=int, default=55450)
     ap.add_argument("--timeout", type=int, default=240)
+    ap.add_argument("--raw", metavar="PATH",
+                    help="process a previously downloaded Overpass response instead of "
+                         "querying. For when this machine cannot reach Overpass but "
+                         "another one can -- the parsing, milepost placement and "
+                         "three-state amenity handling are identical either way.")
     args = ap.parse_args()
 
     metres = int(args.radius * 1609.344)
-    print(f"Fetching camp sites and lodging within {args.radius} mi of the Parkway…")
-    payload = fetch(args.relation, metres, args.timeout)
+    if args.raw:
+        print(f"Reading a saved Overpass response from {args.raw}…")
+        with open(args.raw) as f:
+            payload = json.load(f)
+    else:
+        print(f"Fetching camp sites and lodging within {args.radius} mi of the Parkway…")
+        payload = fetch(args.relation, metres, args.timeout)
     elements = payload.get("elements", [])
     print(f"  {len(elements)} raw elements")
     if not elements:
