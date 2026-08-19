@@ -50,7 +50,9 @@ def main():
 
     campgrounds = S.build_campgrounds(model, net, json.load(open(f"{DATA}/campgrounds.json")))
     osm = P.load_osm(DATA)
-    all_places = P.build(model, net, json.load(open(f"{DATA}/campgrounds.json")), osm)
+    enrichment = P.load_enrichment(DATA)
+    all_places = P.build(model, net, json.load(open(f"{DATA}/campgrounds.json")),
+                         osm, enrichment)
     fuel = S.build_fuel(model, net, json.load(open(f"{DATA}/fuel.json")))
     closures_raw = json.load(open(f"{DATA}/closures.json"))
 

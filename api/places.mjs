@@ -24,7 +24,25 @@
  * the file is the contained fix.
  */
 
-const ALLOWED_TYPES = new Set(['campground', 'rv_park', 'lodging', 'gas_station']);
+/* One request-side category maps to several Google types.
+ *
+ * The Places API (New) assigns a SPECIFIC primary type -- hotel, motel, inn -- and the
+ * legacy umbrella `lodging` is not among them for most places. Sending
+ * includedTypes: ['lodging'] therefore matched almost nothing, which is why searching for
+ * campgrounds returned results and searching for hotels silently returned none: the
+ * request was fine, the type was a category Google no longer files places under.
+ *
+ * Grouping also makes the campground search better than it was -- an RV park with a tent
+ * loop and a camping cabin were both invisible before.
+ */
+const TYPE_GROUPS = {
+  lodging: ['hotel', 'motel', 'inn', 'bed_and_breakfast', 'resort_hotel',
+            'extended_stay_hotel', 'guest_house', 'hostel', 'cottage'],
+  campground: ['campground', 'rv_park', 'camping_cabin'],
+  rv_park: ['rv_park', 'campground'],
+  gas_station: ['gas_station']
+};
+const ALLOWED_TYPES = new Set(Object.keys(TYPE_GROUPS));
 const MAX_RADIUS_M = 40000;      // ~25 mi, the same corridor the OSM pull uses
 
 export default async function handler(req, res) {
@@ -59,7 +77,7 @@ export default async function handler(req, res) {
 
   const url = 'https://places.googleapis.com/v1/places:searchNearby';
   const body = {
-    includedTypes: [type],
+    includedTypes: TYPE_GROUPS[type],
     maxResultCount: 20,
     locationRestriction: {
       circle: { center: { latitude: lat, longitude: lon }, radius: radiusM }
