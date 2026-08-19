@@ -265,6 +265,15 @@ def main():
             "  export GOOGLE_MAPS_API_KEY=AIza...\n"
             "Use the same key the deployed app uses, and make sure the Places API (New) is "
             "enabled for it. Nothing was requested and nothing was written.")
+    # Catch the placeholder before spending a request on it. Pasting the instructions
+    # verbatim is an easy thing to do, and the error Google returns for it -- a bare
+    # API_KEY_INVALID -- does not tell you which of the many possible key problems it is.
+    if key.strip() in ("PASTE_KEY_HERE", "AIza...", "your-key-here") or len(key.strip()) < 20:
+        raise SystemExit(
+            f"That does not look like a real key: {key.strip()[:20]!r}\n"
+            "Replace the placeholder with the actual key, keeping the quotes:\n"
+            "  export GOOGLE_MAPS_API_KEY='AIzaSy...'\n"
+            "Nothing was requested and nothing was written.")
 
     if not os.path.exists(SRC):
         raise SystemExit(f"{SRC} not found. Run build/fetch_osm.py first.")
