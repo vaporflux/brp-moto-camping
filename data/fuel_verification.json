@@ -4,10 +4,10 @@
  "min_name_ratio": 0.55,
  "exits_checked": 29,
  "tally": {
-  "confirmed": 41,
+  "confirmed": 44,
   "closed": 0,
-  "unconfirmed": 18,
-  "discovered": 247
+  "unconfirmed": 15,
+  "discovered": 276
  },
  "exits": [
   {
@@ -537,9 +537,10 @@
    "searched": {
     "lat": 37.7478,
     "lon": -79.37502,
-    "radius_mi": 4.45
+    "radius_mi": 2.23
    },
-   "google_returned": 20,
+   "google_returned": 9,
+   "capped": false,
    "stations": [
     {
      "name": "BP",
@@ -614,23 +615,23 @@
      "match_mi": 0.003,
      "match_name_score": 1.0,
      "google": {
-      "google_id": "ChIJRdC6N5nLTIgR29D64QPMepE",
-      "name": "ATM (Popular Hill Exxon)",
+      "google_id": "ChIJp8cnTHzLTIgRmQzy4nR-fdI",
+      "name": "Exxon",
       "lat": 37.758275,
       "lon": -79.4179249,
       "address": "848 E Midland Trail, Lexington, VA 24450, USA",
       "phone": null,
       "status": "OPERATIONAL",
-      "rating": null,
-      "ratings": null,
+      "rating": 3.8,
+      "ratings": 246,
       "hours": [
-       "Monday: Open 24 hours",
-       "Tuesday: Open 24 hours",
-       "Wednesday: Open 24 hours",
-       "Thursday: Open 24 hours",
-       "Friday: Open 24 hours",
-       "Saturday: Open 24 hours",
-       "Sunday: Open 24 hours"
+       "Monday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+       "Tuesday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+       "Wednesday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+       "Thursday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+       "Friday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+       "Saturday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+       "Sunday: 7:00\u202fAM\u2009\u2013\u200910:00\u202fPM"
       ]
      }
     }
@@ -638,23 +639,23 @@
    "closed": [],
    "discovered": [
     {
-     "google_id": "ChIJp8cnTHzLTIgRmQzy4nR-fdI",
-     "name": "Exxon",
+     "google_id": "ChIJRdC6N5nLTIgR29D64QPMepE",
+     "name": "ATM (Popular Hill Exxon)",
      "lat": 37.758275,
      "lon": -79.4179249,
      "address": "848 E Midland Trail, Lexington, VA 24450, USA",
      "phone": null,
      "status": "OPERATIONAL",
-     "rating": 3.8,
-     "ratings": 246,
+     "rating": null,
+     "ratings": null,
      "hours": [
-      "Monday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
-      "Tuesday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
-      "Wednesday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
-      "Thursday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
-      "Friday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
-      "Saturday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
-      "Sunday: 7:00\u202fAM\u2009\u2013\u200910:00\u202fPM"
+      "Monday: Open 24 hours",
+      "Tuesday: Open 24 hours",
+      "Wednesday: Open 24 hours",
+      "Thursday: Open 24 hours",
+      "Friday: Open 24 hours",
+      "Saturday: Open 24 hours",
+      "Sunday: Open 24 hours"
      ]
     },
     {
@@ -1186,9 +1187,10 @@
    "searched": {
     "lat": 37.36634,
     "lon": -79.89808,
-    "radius_mi": 5.81
+    "radius_mi": 2.9
    },
    "google_returned": 20,
+   "capped": true,
    "stations": [
     {
      "name": "Kroger",
@@ -1207,8 +1209,29 @@
      "lat": 37.39293,
      "lon": -79.9065,
      "mi_straight": 4.8,
-     "verify": "unconfirmed",
-     "google": null
+     "verify": "confirmed",
+     "match_mi": 0.005,
+     "match_name_score": 1.0,
+     "google": {
+      "google_id": "ChIJjZBmi7kaTYgRd2TyXlfbsxs",
+      "name": "bp",
+      "lat": 37.392961,
+      "lon": -79.906573,
+      "address": "475 Roanoke Rd, Daleville, VA 24083, USA",
+      "phone": "(540) 992-4414",
+      "status": "OPERATIONAL",
+      "rating": 3.6,
+      "ratings": 81,
+      "hours": [
+       "Monday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Tuesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Wednesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Thursday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Friday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Saturday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Sunday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+      ]
+     }
     },
     {
      "name": "GB",
@@ -1217,12 +1240,261 @@
      "lat": 37.39334,
      "lon": -79.90599,
      "mi_straight": 4.8,
-     "verify": "unconfirmed",
-     "google": null
+     "verify": "confirmed",
+     "match_mi": 0.002,
+     "match_name_score": 1.0,
+     "google": {
+      "google_id": "ChIJMzmyj7kaTYgRE47zP_qM_jc",
+      "name": "GB Daleville",
+      "lat": 37.393363199999996,
+      "lon": -79.9059984,
+      "address": "490 Roanoke Rd, Daleville, VA 24083, USA",
+      "phone": "(540) 992-4141",
+      "status": "OPERATIONAL",
+      "rating": 4,
+      "ratings": 210,
+      "hours": [
+       "Monday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Tuesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Wednesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Thursday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Friday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Saturday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Sunday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+      ]
+     }
     }
    ],
    "closed": [],
    "discovered": [
+    {
+     "google_id": "ChIJZ2qxS7YaTYgR2sDytShasCQ",
+     "name": "Kroger Fuel Center",
+     "lat": 37.3962068,
+     "lon": -79.90952829999999,
+     "address": "101 Kingston Dr, Daleville, VA 24083, USA",
+     "phone": "(540) 992-4920",
+     "status": "OPERATIONAL",
+     "rating": 4.4,
+     "ratings": 211,
+     "hours": [
+      "Monday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Tuesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Wednesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Thursday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Friday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Saturday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Sunday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJB7zDKd0PTYgRX6OZayn-GZU",
+     "name": "Exxon",
+     "lat": 37.3550503,
+     "lon": -79.930059,
+     "address": "8201 Williamson Rd, Roanoke, VA 24019, USA",
+     "phone": "(540) 265-2666",
+     "status": "OPERATIONAL",
+     "rating": 4.1,
+     "ratings": 97,
+     "hours": [
+      "Monday: 6:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Tuesday: 6:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Wednesday: 6:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Thursday: 6:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Friday: 6:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Saturday: 6:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Sunday: 6:00\u202fAM\u2009\u2013\u200912:00\u202fAM"
+     ]
+    },
+    {
+     "google_id": "ChIJC4yQwMIPTYgR4_oz-ctAdCQ",
+     "name": "Petro-Webb Commercial Fueling",
+     "lat": 37.356394699999996,
+     "lon": -79.931614,
+     "address": "8223 Reservoir Rd, Roanoke, VA 24019, USA",
+     "phone": "(800) 277-9322",
+     "status": "OPERATIONAL",
+     "rating": 4.8,
+     "ratings": 6,
+     "hours": [
+      "Monday: Open 24 hours",
+      "Tuesday: Open 24 hours",
+      "Wednesday: Open 24 hours",
+      "Thursday: Open 24 hours",
+      "Friday: Open 24 hours",
+      "Saturday: Open 24 hours",
+      "Sunday: Open 24 hours"
+     ]
+    },
+    {
+     "google_id": "ChIJM2ZzZVcQTYgR9fxk0wfLk94",
+     "name": "Exxon",
+     "lat": 37.3422035,
+     "lon": -79.8780556,
+     "address": "5981 Cloverdale Rd, Roanoke, VA 24019, USA",
+     "phone": "(540) 977-5806",
+     "status": "OPERATIONAL",
+     "rating": 4.1,
+     "ratings": 128,
+     "hours": [
+      "Monday: 5:30\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Tuesday: 5:30\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Wednesday: 5:30\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Thursday: 5:30\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Friday: 5:30\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Saturday: 5:30\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Sunday: 7:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJqUSrjrkaTYgRpTBUejGUZVw",
+     "name": "Apple Market",
+     "lat": 37.392931399999995,
+     "lon": -79.9067419,
+     "address": "475 Roanoke Rd, Daleville, VA 24083, USA",
+     "phone": "(540) 992-4414",
+     "status": "OPERATIONAL",
+     "rating": 3.4,
+     "ratings": 5,
+     "hours": [
+      "Monday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Tuesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Wednesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Thursday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Friday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Saturday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Sunday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJI7DOg6QaTYgR11x_cT19x28",
+     "name": "Citgo",
+     "lat": 37.3847731,
+     "lon": -79.90267759999999,
+     "address": "2644 Lee Hwy, Troutville, VA 24175, USA",
+     "phone": "(540) 259-4011",
+     "status": "OPERATIONAL",
+     "rating": 3.3,
+     "ratings": 3,
+     "hours": [
+      "Monday: Open 24 hours",
+      "Tuesday: Open 24 hours",
+      "Wednesday: Open 24 hours",
+      "Thursday: Open 24 hours",
+      "Friday: Open 24 hours",
+      "Saturday: Open 24 hours",
+      "Sunday: Open 24 hours"
+     ]
+    },
+    {
+     "google_id": "ChIJ7fWBKAUQTYgRYVgBCfLe2w8",
+     "name": "Mobil",
+     "lat": 37.3672178,
+     "lon": -79.9106779,
+     "address": "1338 Lee Hwy, Roanoke, VA 24019, USA",
+     "phone": "(540) 992-2802",
+     "status": "OPERATIONAL",
+     "rating": 5,
+     "ratings": 1,
+     "hours": [
+      "Monday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+      "Tuesday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+      "Wednesday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+      "Thursday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+      "Friday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+      "Saturday: 7:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+      "Sunday: 7:00\u202fAM\u2009\u2013\u200910:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJ5Ypv19wPTYgRK69mn6NmHKg",
+     "name": "Stop In",
+     "lat": 37.354793,
+     "lon": -79.9300698,
+     "address": "8201 Williamson Rd SUITE C, Roanoke, VA 24019, USA",
+     "phone": "(540) 265-2666",
+     "status": "OPERATIONAL",
+     "rating": 4,
+     "ratings": 4,
+     "hours": [
+      "Monday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Tuesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Wednesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Thursday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Friday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Saturday: 6:00\u202fAM\u2009\u2013\u200910:00\u202fPM",
+      "Sunday: 7:00\u202fAM\u2009\u2013\u20099:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJB4rqmrkaTYgRMQaCAxdKe8g",
+     "name": "Gas Express",
+     "lat": 37.3933296,
+     "lon": -79.90594159999999,
+     "address": "490 Roanoke Rd, Daleville, VA 24083, USA",
+     "phone": null,
+     "status": "OPERATIONAL",
+     "rating": 4.3,
+     "ratings": 11,
+     "hours": [
+      "Monday: Open 24 hours",
+      "Tuesday: Open 24 hours",
+      "Wednesday: Open 24 hours",
+      "Thursday: Open 24 hours",
+      "Friday: Open 24 hours",
+      "Saturday: Open 24 hours",
+      "Sunday: Open 24 hours"
+     ]
+    },
+    {
+     "google_id": "ChIJI7DOg6QaTYgRlaolB2g99pw",
+     "name": "Dodges Chicken Store",
+     "lat": 37.3847731,
+     "lon": -79.90267759999999,
+     "address": "2644 Lee Hwy, Troutville, VA 24175, USA",
+     "phone": "(540) 992-1753",
+     "status": "OPERATIONAL",
+     "rating": null,
+     "ratings": null,
+     "hours": null
+    },
+    {
+     "google_id": "ChIJ_xl1kLkaTYgROVBQmiM6EzA",
+     "name": "Exxon",
+     "lat": 37.3933478,
+     "lon": -79.9059848,
+     "address": "490 Roanoke Rd, Daleville, VA 24083, USA",
+     "phone": "(540) 992-5553",
+     "status": "OPERATIONAL",
+     "rating": null,
+     "ratings": null,
+     "hours": null
+    },
+    {
+     "google_id": "ChIJpWJwRgAbTYgRL8HF0uPZjA0",
+     "name": "Graceys Exxon",
+     "lat": 37.393664099999995,
+     "lon": -79.90601160000001,
+     "address": "490 Roanoke Rd, Daleville, VA 24083, USA",
+     "phone": null,
+     "status": "OPERATIONAL",
+     "rating": null,
+     "ratings": null,
+     "hours": null
+    },
+    {
+     "google_id": "ChIJbSWXwMIPTYgRcdQXbAxDu-c",
+     "name": "Pac Pride",
+     "lat": 37.3564053,
+     "lon": -79.9316188,
+     "address": "8223 Reservoir Rd, Roanoke, VA 24019, USA",
+     "phone": "(540) 362-3795",
+     "status": "OPERATIONAL",
+     "rating": null,
+     "ratings": null,
+     "hours": null
+    },
     {
      "google_id": "ChIJUcQljbwaTYgRlyEufU9sHhQ",
      "name": "ONE9 Travel Center",
@@ -1633,9 +1905,10 @@
    "searched": {
     "lat": 37.28787,
     "lon": -79.88003,
-    "radius_mi": 3.72
+    "radius_mi": 1.86
    },
-   "google_returned": 20,
+   "google_returned": 19,
+   "capped": false,
    "stations": [
     {
      "name": "Country Crossing Fuel",
@@ -1654,8 +1927,29 @@
      "lat": 37.27283,
      "lon": -79.8875,
      "mi_straight": 2.1,
-     "verify": "unconfirmed",
-     "google": null
+     "verify": "confirmed",
+     "match_mi": 0.005,
+     "match_name_score": 1.0,
+     "google": {
+      "google_id": "ChIJ3aZENTgSTYgRcUNi39IsX1o",
+      "name": "Kroger Fuel Center",
+      "lat": 37.2728286,
+      "lon": -79.88758519999999,
+      "address": "915 Hardy Rd, Vinton, VA 24179, USA",
+      "phone": "(540) 857-4080",
+      "status": "OPERATIONAL",
+      "rating": 4.2,
+      "ratings": 18,
+      "hours": [
+       "Monday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Tuesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Wednesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Thursday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Friday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Saturday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+       "Sunday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+      ]
+     }
     },
     {
      "name": "Kroger",
@@ -1691,6 +1985,158 @@
    ],
    "closed": [],
    "discovered": [
+    {
+     "google_id": "ChIJuQozW10TTYgR_Q4GvxdOWdc",
+     "name": "bp",
+     "lat": 37.2801002,
+     "lon": -79.8621306,
+     "address": "2499 E Washington Ave, Vinton, VA 24179, USA",
+     "phone": "(540) 566-4556",
+     "status": "OPERATIONAL",
+     "rating": 4.1,
+     "ratings": 7,
+     "hours": [
+      "Monday: 7:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Tuesday: 7:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Wednesday: 7:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Thursday: 7:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Friday: 7:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Saturday: 8:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Sunday: 8:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJ6x6Tdo0RTYgRvDudXkIwSvQ",
+     "name": "bp",
+     "lat": 37.3013159,
+     "lon": -79.8943024,
+     "address": "3348 Orange Ave NE, Roanoke, VA 24012, USA",
+     "phone": "(540) 982-8913",
+     "status": "OPERATIONAL",
+     "rating": 3.9,
+     "ratings": 15,
+     "hours": [
+      "Monday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Tuesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Wednesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Thursday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Friday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Saturday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Sunday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJj4EgQf4TTYgRAWqE79VcFp0",
+     "name": "Vinton Tobacco &Grocery",
+     "lat": 37.2801383,
+     "lon": -79.8620692,
+     "address": "2499 E Washington Ave, Vinton, VA 24179, USA",
+     "phone": "(540) 566-4556",
+     "status": "OPERATIONAL",
+     "rating": 5,
+     "ratings": 30,
+     "hours": [
+      "Monday: 7:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Tuesday: 7:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Wednesday: 7:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Thursday: 7:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Friday: 7:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Saturday: 8:00\u202fAM\u2009\u2013\u200912:00\u202fAM",
+      "Sunday: 8:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJETK7N8sTTYgR0Zuldwr6PN4",
+     "name": "Vinton Foodmart BP",
+     "lat": 37.2716103,
+     "lon": -79.8734841,
+     "address": "1339 Hardy Rd, Vinton, VA 24179, USA",
+     "phone": "(540) 529-4530",
+     "status": "OPERATIONAL",
+     "rating": 4.2,
+     "ratings": 51,
+     "hours": [
+      "Monday: 6:00\u202fAM\u2009\u2013\u20098:30\u202fPM",
+      "Tuesday: 6:00\u202fAM\u2009\u2013\u20098:30\u202fPM",
+      "Wednesday: 6:00\u202fAM\u2009\u2013\u20098:30\u202fPM",
+      "Thursday: 6:00\u202fAM\u2009\u2013\u20098:30\u202fPM",
+      "Friday: 6:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Saturday: 6:00\u202fAM\u2009\u2013\u20098:30\u202fPM",
+      "Sunday: 7:00\u202fAM\u2009\u2013\u20098:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJwfIsrhYSTYgRZgU28syUiNQ",
+     "name": "BP",
+     "lat": 37.2764148,
+     "lon": -79.9018475,
+     "address": "210 W Virginia Ave, Vinton, VA 24179, USA",
+     "phone": "(540) 345-8831",
+     "status": "OPERATIONAL",
+     "rating": 4.5,
+     "ratings": 10,
+     "hours": [
+      "Monday: 5:00\u202fAM\u2009\u2013\u200910:30\u202fPM",
+      "Tuesday: 5:00\u202fAM\u2009\u2013\u200910:30\u202fPM",
+      "Wednesday: 5:00\u202fAM\u2009\u2013\u200910:30\u202fPM",
+      "Thursday: 5:00\u202fAM\u2009\u2013\u200910:30\u202fPM",
+      "Friday: 5:00\u202fAM\u2009\u2013\u200910:30\u202fPM",
+      "Saturday: 5:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Sunday: 5:00\u202fAM\u2009\u2013\u200910:30\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJqSd7kc0TTYgRTrTSlql3fFQ",
+     "name": "Foodette",
+     "lat": 37.2777478,
+     "lon": -79.8706966,
+     "address": "1551 E Washington Ave, Vinton, VA 24179, USA",
+     "phone": "(540) 890-4750",
+     "status": "OPERATIONAL",
+     "rating": 2.6,
+     "ratings": 5,
+     "hours": [
+      "Monday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Tuesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Wednesday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Thursday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Friday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Saturday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM",
+      "Sunday: 6:00\u202fAM\u2009\u2013\u200911:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJcV6xLcgTTYgR64WaN9IkvgE",
+     "name": "Lancer Marts Division-Brabham Petro",
+     "lat": 37.267961,
+     "lon": -79.865848,
+     "address": "2116 Hardy Rd, Vinton, VA 24179, USA",
+     "phone": "(540) 890-0578",
+     "status": "OPERATIONAL",
+     "rating": 5,
+     "ratings": 1,
+     "hours": null
+    },
+    {
+     "google_id": "ChIJdTLFKmoRTYgRtvAyt16Xv8k",
+     "name": "7Day Quickmart",
+     "lat": 37.301414199999996,
+     "lon": -79.89434299999999,
+     "address": "3348 Orange Ave NE, Roanoke, VA 24012, USA",
+     "phone": "(540) 541-8563",
+     "status": "OPERATIONAL",
+     "rating": null,
+     "ratings": null,
+     "hours": [
+      "Monday: 7:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Tuesday: 7:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Wednesday: 7:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Thursday: 7:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Friday: 7:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Saturday: 7:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Sunday: 7:00\u202fAM\u2009\u2013\u20099:00\u202fPM"
+     ]
+    },
     {
      "google_id": "ChIJvSoBRwANTYgREhmlTywr_u4",
      "name": "Circle K",
@@ -2081,9 +2527,10 @@
    "searched": {
     "lat": 37.22829,
     "lon": -79.97816,
-    "radius_mi": 2.62
+    "radius_mi": 1.31
    },
-   "google_returned": 20,
+   "google_returned": 13,
+   "capped": false,
    "stations": [
     {
      "name": "Shell",
@@ -2181,6 +2628,50 @@
    ],
    "closed": [],
    "discovered": [
+    {
+     "google_id": "ChIJoXtE1kpzTYgRtzT8NGMWAGw",
+     "name": "Magellan Midstream Partners Roanoke Terminal",
+     "lat": 37.2138176,
+     "lon": -79.9894125,
+     "address": "5287 Terminal Rd, Roanoke, VA 24018, USA",
+     "phone": "(540) 989-6673",
+     "status": "OPERATIONAL",
+     "rating": 2.5,
+     "ratings": 8,
+     "hours": null
+    },
+    {
+     "google_id": "ChIJF_eNFLsMTYgRhxFj45uSuNU",
+     "name": "Marathon",
+     "lat": 37.2294394,
+     "lon": -79.9959128,
+     "address": "3660 Colonial Ave, Roanoke, VA 24018, USA",
+     "phone": "(540) 774-1664",
+     "status": "OPERATIONAL",
+     "rating": 5,
+     "ratings": 3,
+     "hours": null
+    },
+    {
+     "google_id": "ChIJ7eQPPbYMTYgRy-nX41fnk2c",
+     "name": "Stop In Food Stores",
+     "lat": 37.2215212,
+     "lon": -79.9865382,
+     "address": "4717 Starkey Rd, Roanoke, VA 24018, USA",
+     "phone": "(540) 774-6875",
+     "status": "OPERATIONAL",
+     "rating": 3.9,
+     "ratings": 24,
+     "hours": [
+      "Monday: Open 24 hours",
+      "Tuesday: Open 24 hours",
+      "Wednesday: Open 24 hours",
+      "Thursday: Open 24 hours",
+      "Friday: Open 24 hours",
+      "Saturday: Open 24 hours",
+      "Sunday: Open 24 hours"
+     ]
+    },
     {
      "google_id": "ChIJJagJ0NsMTYgR2joellnBCVU",
      "name": "Exxon",
@@ -3735,9 +4226,10 @@
    "searched": {
     "lat": 36.35899,
     "lon": -81.43195,
-    "radius_mi": 6.56
+    "radius_mi": 3.28
    },
-   "google_returned": 20,
+   "google_returned": 4,
+   "capped": false,
    "stations": [
     {
      "name": "Marathon",
@@ -3779,6 +4271,18 @@
    ],
    "closed": [],
    "discovered": [
+    {
+     "google_id": "ChIJySjgLs6rUYgRbaZyrVAYLy4",
+     "name": "D & R Fuels",
+     "lat": 36.3531985,
+     "lon": -81.43932339999999,
+     "address": "5087 NC-163, West Jefferson, NC 28694, USA",
+     "phone": "(336) 877-5454",
+     "status": "OPERATIONAL",
+     "rating": null,
+     "ratings": null,
+     "hours": null
+    },
     {
      "google_id": "ChIJAc0BVrWrUYgRIR4gtjuPxRE",
      "name": "bp",
@@ -4555,9 +5059,10 @@
    "searched": {
     "lat": 35.59251,
     "lon": -82.44495,
-    "radius_mi": 4.44
+    "radius_mi": 2.22
    },
-   "google_returned": 20,
+   "google_returned": 12,
+   "capped": false,
    "stations": [
     {
      "name": "Ingles Gas Express",
@@ -4599,6 +5104,62 @@
    ],
    "closed": [],
    "discovered": [
+    {
+     "google_id": "ChIJ64epXVn3WYgRVhurKKuBneo",
+     "name": "Stop & Go",
+     "lat": 35.5933018,
+     "lon": -82.4363736,
+     "address": "1930 US-70, Swannanoa, NC 28778, USA",
+     "phone": "(828) 299-4565",
+     "status": "OPERATIONAL",
+     "rating": 3.3,
+     "ratings": 12,
+     "hours": null
+    },
+    {
+     "google_id": "ChIJUy5pSk7xWYgRLZZ39s0_p30",
+     "name": "Eblen Short Stop Store",
+     "lat": 35.584376999999996,
+     "lon": -82.463072,
+     "address": "1438 Tunnel Rd #8, Asheville, NC 28805, USA",
+     "phone": "(828) 298-9269",
+     "status": "OPERATIONAL",
+     "rating": 2.6,
+     "ratings": 7,
+     "hours": [
+      "Monday: 6:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Tuesday: 6:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Wednesday: 6:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Thursday: 6:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Friday: 6:00\u202fAM\u2009\u2013\u20099:00\u202fPM",
+      "Saturday: Open 24 hours",
+      "Sunday: 7:00\u202fAM\u2009\u2013\u20099:00\u202fPM"
+     ]
+    },
+    {
+     "google_id": "ChIJ84Q3bgD3WYgRlU8SwByfu8o",
+     "name": "Blossman gas inc.",
+     "lat": 35.5952933,
+     "lon": -82.42333819999999,
+     "address": "2091 US-70, Swannanoa, NC 28778, USA",
+     "phone": null,
+     "status": "OPERATIONAL",
+     "rating": null,
+     "ratings": null,
+     "hours": null
+    },
+    {
+     "google_id": "ChIJYV1hBgf0WYgRZdqc1_Ow4FI",
+     "name": "Riceville Smoke Mart",
+     "lat": 35.59582170000001,
+     "lon": -82.4831253,
+     "address": "421 Riceville Rd, Asheville, NC 28805, USA",
+     "phone": "(828) 298-7540",
+     "status": "OPERATIONAL",
+     "rating": 4,
+     "ratings": 4,
+     "hours": null
+    },
     {
      "google_id": "ChIJ9z-_DJbzWYgRhRBwsaVc5zY",
      "name": "Shell",
@@ -4989,9 +5550,10 @@
    "searched": {
     "lat": 35.56606,
     "lon": -82.51023,
-    "radius_mi": 2.0
+    "radius_mi": 1.0
    },
-   "google_returned": 20,
+   "google_returned": 4,
+   "capped": false,
    "stations": [
     {
      "name": "Citgo",
@@ -6014,9 +6576,10 @@
    "searched": {
     "lat": 35.43342,
     "lon": -83.09834,
-    "radius_mi": 9.0
+    "radius_mi": 4.5
    },
-   "google_returned": 20,
+   "google_returned": 0,
+   "capped": false,
    "stations": [
     {
      "name": "Ingles Gas Express",
