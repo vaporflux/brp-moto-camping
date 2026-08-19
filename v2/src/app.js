@@ -27,6 +27,7 @@
     stayShowers: false,        // only places TAGGED as having showers
     stayToilets: false,
     stayWithinMi: 15,          // miles off the Parkway
+    previewId: null,           // place shown on the map but not yet committed
     googleResults: null,       // live Google Places hits, never persisted
     tab: 'plan',
     filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
@@ -44,14 +45,23 @@
         maxFuelDetourMi: state.maxFuelDetourMi, checklist: state.checklist,
         device: state.device, tankMi: state.tankMi,
         start: state.start, accessMp: state.accessMp,
-        finish: state.finish, endPoint: state.endPoint
+        finish: state.finish, endPoint: state.endPoint,
+        stayWithinMi: state.stayWithinMi,
+        // Cached road geometry rides along with the trip. Routing needs signal; riding
+        // does not, so a trip planned at home keeps its real roads in a dead zone.
+        roads: Directions.dump()
       }));
     } catch (e) { /* private mode: the trip still works, it just will not persist */ }
   }
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (raw) Object.assign(state, JSON.parse(raw));
+      if (raw) {
+        const saved = JSON.parse(raw);
+        Directions.seed(saved.roads);
+        delete saved.roads;
+        Object.assign(state, saved);
+      }
     } catch (e) { /* ignore corrupt state rather than trap the user on a broken page */ }
   }
 
@@ -86,6 +96,77 @@
     return groups.filter(g => g.length >= 1);
   }
 
+  /* Fold real road geometry into an exported day.
+   *
+   * A day built from mileposts alone carries nothing for the legs that leave the Parkway.
+   * Where the router has given us roads, this adds shaping points along them and appends
+   * the geometry to the track, so the GPX says which way to go instead of leaving it to
+   * the device. Budget is respected: off-Parkway points are capped and dropped first if a
+   * day is tight, because the Parkway points are the ones that stop an interstate detour.
+   */
+  function withRoadGeometry(day, trip) {
+    if (!trip || trip.error || !day || !day.rtepts) return day;
+    const extras = [];
+    const trackAdds = [];
+    (trip.roadLegs || []).forEach(leg => {
+      const road = Directions.peek(leg.from, leg.to);
+      if (!road || !road.ok || !road.polyline || road.polyline.length < 3) return;
+      trackAdds.push(road.polyline);
+      // Name by where the leg is going, not by the leg's sentence: "SP Ride in to M 1"
+      // is what a truncated label looks like on the device.
+      // safeName strips the period out of "MP 382.5", so name these by what they do.
+      const target = leg.stop ? leg.stop.name
+                   : leg.id === 'in' ? 'to Parkway' : 'to finish';
+      // The ride in and out are ordinary roads the device handles well, so they get a
+      // light touch. The hop off the Parkway to a campsite is short, easy to get wrong,
+      // and worth spending points on.
+      const maxPts = leg.stop ? 6 : 4;
+      Router.shapeOffParkway(road.polyline, 3, maxPts).forEach((pt, i) => {
+        extras.push({ ...pt, mp: null,
+                      legId: leg.id === 'in' || leg.id === 'out' ? leg.id : 'off',
+                      stopId: leg.stop ? leg.stop.id : null,
+                      name: `SP ${Gpx.safeName(target, 14)} ${i + 1}` });
+      });
+    });
+    if (!extras.length && !trackAdds.length) return day;
+
+    const room = Router.MAX_TOTAL_RTEPT - day.nTotal;
+    const kept = extras.slice(0, Math.max(0, room));
+    const merged = { ...day };
+    if (kept.length) {
+      // Travel order is not negotiable. Points for the ride IN belong before the first
+      // via; points for a hop off the Parkway belong just before the stop they serve;
+      // points for the ride OUT belong at the end. Appending them all -- which an earlier
+      // version did whenever the name match missed -- routes the rider to the campground
+      // and then back down their own driveway.
+      const pts = [...day.rtepts];
+      const anchorIndex = leg => {
+        // After the start via, not before it: the rider leaves home first, then follows
+        // these roads to the Parkway.
+        if (leg.legId === 'in') return 1;
+        if (leg.legId === 'out') return pts.length;
+        const at = pts.findIndex(r => r.type === 'via' && r.id === leg.stopId);
+        return at >= 0 ? at : pts.length;
+      };
+      // Insert from the back so earlier indices stay valid.
+      const groups = [...new Set(kept.map(k => k.legId))]
+        .map(id => ({ legId: id, stopId: kept.find(k => k.legId === id).stopId,
+                      points: kept.filter(k => k.legId === id) }))
+        .sort((a, b) => anchorIndex(b) - anchorIndex(a));
+      groups.forEach(g => pts.splice(anchorIndex(g), 0, ...g.points));
+      merged.rtepts = pts;
+      merged.nTotal = pts.length;
+      merged.nVia = pts.filter(r => r.type === 'via').length;
+    }
+    if (trackAdds.length) {
+      merged.track = [...day.track];
+      trackAdds.forEach(poly => merged.track.push(...poly));
+    }
+    merged.roadGeometry = trackAdds.length;
+    merged.droppedOffParkwayPoints = extras.length - kept.length;
+    return merged;
+  }
+
   function buildDays() {
     // Fuel gaps are a property of the whole trip, not of a day (see tripFuelGaps).
     // Each gap is attributed to the day its run begins in.
@@ -111,7 +192,8 @@
         return { index: i + 1, stops, error: 'Needs at least two stops.', routes: [] };
       }
       try {
-        const routes = Router.splitDay(stops);
+        const trip = itinerary();
+        const routes = Router.splitDay(stops).map(r => withRoadGeometry(r, trip));
         const worst = gapForDay(i);
         const totalMi = routes.reduce((a, r) => a + r.totalMi, 0);
         const warnings = routes.flatMap(r => r.warnings);
@@ -179,8 +261,9 @@
     const endLL = state.finish === 'other' && state.endPoint
       ? [state.endPoint.lat, state.endPoint.lon]
       : startLL;
+    const shortLabel = t => String(t).split(',').slice(0, 2).join(',').trim();
     const endLabel = state.finish === 'other' && state.endPoint
-      ? state.endPoint.label : (state.start.label + ' (home)');
+      ? shortLabel(state.endPoint.label) : `home (${shortLabel(state.start.label)})`;
     let exitPoint = null;
     try {
       exitPoint = Access.bestExitPoints(endLL, dest.mp, 1)[0] || null;
@@ -204,7 +287,24 @@
       + `connects.`
       : null;
 
-    return { chosen, options, fuel, dest, severedNote, exitPoint, endLabel,
+    // The legs a router has to answer for. Each is [from, to, label].
+    const roadLegs = [];
+    roadLegs.push({ id: 'in', from: [state.start.lat, state.start.lon],
+                    to: [chosen.lat, chosen.lon],
+                    label: `Ride in to MP ${chosen.mp}` });
+    state.stops.forEach(st => {
+      // Only stops that actually sit off the Parkway need a hop; one at MP 0.2 does not.
+      if ((st.offParkwayMi || 0) < 0.3) return;
+      const [plat, plon] = BRP.coordAtMp(st.mp);
+      roadLegs.push({ id: `off-${st.id}`, from: [plat, plon], to: [st.lat, st.lon],
+                      label: `Off the Parkway to ${st.name}`, stop: st });
+    });
+    if (exitPoint) {
+      roadLegs.push({ id: 'out', from: [exitPoint.lat, exitPoint.lon], to: endLL,
+                      label: `Ride out to ${endLabel}` });
+    }
+
+    return { chosen, options, fuel, dest, severedNote, exitPoint, endLabel, roadLegs,
              approachMi: chosen.approachMi,
              parkwayMi: fuel.parkwayMi != null ? fuel.parkwayMi : Math.abs(dest.mp - chosen.mp) };
   }
@@ -470,13 +570,13 @@
         if (c.source === 'google') badges.append(el('span', 'badge', 'Google'));
         if (badges.childElementCount) body.append(badges);
         b.append(body);
-        b.onclick = () => {
-          addStop(BRP.placeStop(c));
-          state.destQuery = '';
-          state.addingStop = false;
-          render();
-        };
+        if (state.previewId === c.id) b.classList.add('sel');
+        // Tapping shows it on the map first. Committing is a second, deliberate action --
+        // a name and a milepost tell a rider nothing about whether they want to sleep
+        // there, so nothing is added to the trip until they have seen where it is.
+        b.onclick = () => { state.previewId = c.id; render(); previewOnMap(c); };
         list.append(b);
+        if (state.previewId === c.id) list.append(previewCard(c));
       });
     };
     input.oninput = e => { state.destQuery = e.target.value; draw(); };
@@ -484,6 +584,92 @@
 
     sec.append(googleSearchRow());
     return sec;
+  }
+
+  /* The detail a list row cannot carry, shown once the rider has picked something out. */
+  function previewCard(c) {
+    const card = el('div', 'preview');
+    const head = el('div', 'preview-head');
+    head.append(el('div', 's-name', c.name));
+    head.append(el('div', 's-meta', [
+      c.mp != null ? `Milepost ${c.mp.toFixed(1)}` : null,
+      c.off_parkway_mi != null
+        ? (c.off_parkway_mi < 0.3 ? 'right on the Parkway'
+                                  : `${c.off_parkway_mi} mi off the Parkway`)
+        : null,
+      c.state
+    ].filter(Boolean).join(' \u00b7 ')));
+    card.append(head);
+
+    const facts = [
+      ['Price', c.price], ['Season', c.season], ['Address', c.address],
+      ['Showers', c.showers === true ? 'Yes' : c.showers === false ? 'No'
+                 : 'Not recorded — nobody has said either way'],
+      ['Toilets', c.toilets === true ? 'Yes' : c.toilets === false ? 'No'
+                 : 'Not recorded'],
+      ['Getting in', c.access], ['Why it works', c.standout],
+      ['Watch out', c.watchout], ['Food', c.food], ['Phone', c.phone]
+    ].filter(([, v]) => v);
+    const dl = el('dl', 'facts');
+    facts.forEach(([k, v]) => {
+      dl.append(el('dt', null, k));
+      dl.append(el('dd', null, String(v)));
+    });
+    card.append(dl);
+
+    if (c.blocking_closure) {
+      card.append(el('div', 'alert warn',
+        `The Parkway is closed at MP ${c.mp.toFixed(1)} — ${c.blocking_closure.reason}. `
+        + `You can still get here, but not straight off the Parkway.`));
+    }
+    card.append(el('div', 'tiny',
+      c.source === 'curated' ? 'Researched and verified for this planner.'
+      : c.source === 'osm' ? 'From OpenStreetMap. Details may be incomplete.'
+      : 'From Google, this session only.'));
+
+    const row = el('div', 'btn-row');
+    row.style.marginTop = '10px';
+    const add = el('button', 'btn primary', 'Stay here');
+    add.onclick = () => {
+      addStop(BRP.placeStop(c));
+      state.destQuery = '';
+      state.addingStop = false;
+      state.previewId = null;
+      render();
+    };
+    const shut = el('button', 'btn ghost', 'Not this one');
+    shut.onclick = () => { state.previewId = null; render(); };
+    row.append(add, shut);
+    if (c.url) {
+      const link = el('a', 'tiny');
+      link.href = c.url; link.target = '_blank'; link.rel = 'noopener';
+      link.textContent = 'Open their website';
+      link.style.cssText = 'display:block;margin-top:8px;color:var(--sky)';
+      card.append(link);
+    }
+    card.append(row);
+    return card;
+  }
+
+  function previewOnMap(c) {
+    if (!map) return;
+    map.setView([c.lat, c.lon], Math.max(map.getZoom(), 11), { animate: true });
+    layers.preview.clearLayers();
+    L.marker([c.lat, c.lon], { icon: dot('#e0a33e', 20) })
+      .bindPopup(`<h3>${c.name}</h3>`
+        + `${c.mp != null ? 'MP ' + c.mp.toFixed(1) : ''}`
+        + `${c.off_parkway_mi != null ? ' · ' + c.off_parkway_mi + ' mi off the Parkway' : ''}`
+        + `${c.price ? '<br>' + c.price : ''}`
+        + `${c.access ? '<br><br>' + c.access : ''}`)
+      .addTo(layers.preview)
+      .openPopup();
+    // Show how far off the Parkway it actually sits -- the thing a milepost hides.
+    if (c.mp != null && (c.off_parkway_mi || 0) >= 0.3) {
+      const [plat, plon] = BRP.coordAtMp(c.mp);
+      L.polyline([[plat, plon], [c.lat, c.lon]],
+                 { color: '#e0a33e', weight: 2, dashArray: '3 5', opacity: .9 })
+        .addTo(layers.preview);
+    }
   }
 
   /* Live Google Places lookup. Optional by design: it needs signal and a configured key,
@@ -745,6 +931,8 @@
     }
     wrap.append(steps);
 
+    wrap.append(sectionRoads(trip));
+
     if (!f.ok) {
       const bad = el('div', 'section');
       bad.append(el('div', 'alert error', f.error));
@@ -761,6 +949,84 @@
       if (notes.childElementCount) wrap.append(notes);
     }
     return wrap;
+  }
+
+  /* Turn-by-turn for the legs that leave the Parkway.
+   *
+   * These are the legs the rider cannot work out from a milepost, and the ones the Garmin
+   * would otherwise route on its own guess. Fetching them also gives the exporter real
+   * geometry to hang shaping points on. */
+  function sectionRoads(trip) {
+    const sec = el('div', 'section');
+    sec.append(el('h2', null, 'Roads off the Parkway'));
+    const legs = trip.roadLegs || [];
+    if (!legs.length) {
+      sec.append(el('p', 'tiny', 'Every stop on this trip is on the Parkway itself.'));
+      return sec;
+    }
+
+    const missing = legs.filter(l => {
+      const r = Directions.peek(l.from, l.to);
+      return !r || !r.ok;
+    });
+
+    if (missing.length) {
+      const row = el('div', 'btn-row');
+      const btn = el('button', 'btn sm',
+        `Get road directions (${missing.length} leg${missing.length > 1 ? 's' : ''})`);
+      const status = el('div', 'tiny');
+      status.style.marginTop = '6px';
+      btn.onclick = async () => {
+        btn.disabled = true;
+        status.textContent = 'Routing\u2026';
+        let failed = null;
+        for (const leg of missing) {
+          const r = await Directions.fetchLeg(leg.from, leg.to);
+          if (!r.ok) failed = r;
+        }
+        btn.disabled = false;
+        status.textContent = '';
+        if (failed) {
+          status.textContent = failed.hint
+            ? `${failed.error} ${failed.hint}`
+            : `${failed.error} Without it these legs stay straight-line estimates.`;
+        }
+        render();
+      };
+      row.append(btn);
+      sec.append(row, status);
+      sec.append(el('p', 'tiny',
+        'Needs a connection, once. The result is saved with the trip, so the roads and the '
+        + 'turn list are still there when you have no signal.'));
+    }
+
+    legs.forEach(leg => {
+      const road = Directions.peek(leg.from, leg.to);
+      const card = el('details', 'turns');
+      const sum = el('summary');
+      sum.append(el('span', 's-name', leg.label));
+      sum.append(el('span', 's-meta', road && road.ok
+        ? `${road.distance_mi} mi by road \u00b7 about ${road.duration_min} min`
+        : 'straight-line estimate only'));
+      card.append(sum);
+      if (road && road.ok) {
+        const ol = el('ol', 'turn-list');
+        (road.legs || []).forEach(l => (l.steps || []).forEach(st => {
+          const li = el('li');
+          li.append(document.createTextNode(st.text));
+          if (st.distance_mi) li.append(el('span', 'turn-dist', `${st.distance_mi} mi`));
+          ol.append(li);
+        }));
+        card.append(ol.childElementCount ? ol
+          : el('p', 'tiny', 'No turn list came back for this leg.'));
+      } else {
+        card.append(el('p', 'tiny',
+          'No road route yet. The line on the map is a straight-line estimate, and the '
+          + 'exported GPX has no geometry for this leg — your device will pick its own way.'));
+      }
+      sec.append(card);
+    });
+    return sec;
   }
 
   function stepRow(marker, title, detail, level) {
@@ -1093,6 +1359,7 @@
 
     layers.stops = L.layerGroup().addTo(map);
     layers.route = L.layerGroup().addTo(map);
+    layers.preview = L.layerGroup().addTo(map);
 
     map.on('click', e => {
       const name = prompt('Name this stop:', 'Custom stop');
@@ -1110,13 +1377,24 @@
 
   function drawMarkers() {
     layers.stops.clearLayers();
-    const COL = { top: '#e0a33e', solid: '#7fa35c', backup: '#8d9683', moto: '#c8552f' };
+    const COL = { top: '#e0a33e', solid: '#7fa35c', backup: '#8d9683', moto: '#c8552f',
+                  hotel: '#5b93b8' };
     if (state.filters.campground) {
-      D.campgrounds.forEach(c => {
-        const col = c.moto ? COL.moto : (COL[c.tier] || COL.solid);
-        L.marker([c.lat, c.lon], { icon: dot(col, 12) })
-          .bindPopup(`<h3>${c.name}</h3>MP ${c.mp} · ${c.price || ''}<br>${c.access || ''}`)
-          .on('click', () => addStop(BRP.asStop(c)))
+      (D.places || []).forEach(c => {
+        const col = c.kind === 'hotel' ? COL.hotel
+                  : c.moto ? COL.moto : (COL[c.tier] || COL.solid);
+        // A bare dot tells a rider nothing, so every marker carries its name on hover and
+        // its detail on click -- the same card the list shows.
+        L.marker([c.lat, c.lon], { icon: dot(col, c.source === 'curated' ? 12 : 9) })
+          .bindTooltip(`${c.name}${c.mp != null ? ` — MP ${c.mp.toFixed(1)}` : ''}`,
+                       { direction: 'top' })
+          .on('click', () => {
+            state.previewId = c.id;
+            state.tab = 'plan';
+            state.addingStop = true;
+            render();
+            previewOnMap(c);
+          })
           .addTo(layers.stops);
       });
     }
@@ -1137,17 +1415,25 @@
   function drawRoute() {
     layers.route.clearLayers();
 
-    // The ride in, as a dashed straight line. There is no routing engine here, so this
-    // is a hint about direction and rough distance, not a road route -- drawn dashed and
-    // labelled so it never reads as turn-by-turn. The device works out the real roads.
+    // Off-Parkway legs: solid where a router has given us real roads, dashed where it
+    // has not. The distinction is the point -- a dashed line is an estimate and must never
+    // read as turn-by-turn.
     const trip = itinerary();
     if (trip && !trip.error && state.start) {
-      const c = trip.chosen;
-      L.polyline([[state.start.lat, state.start.lon], [c.lat, c.lon]],
-                 { color: '#a9b39c', weight: 2, opacity: .75, dashArray: '4 7' })
-        .bindTooltip(`Ride in ~${c.approachMi} mi to MP ${c.mp} (straight-line estimate)`,
-                     { sticky: true })
-        .addTo(layers.route);
+      (trip.roadLegs || []).forEach(leg => {
+        const road = Directions.peek(leg.from, leg.to);
+        if (road && road.ok && road.polyline && road.polyline.length > 1) {
+          L.polyline(road.polyline, { color: '#7fa35c', weight: 4, opacity: .95 })
+            .bindTooltip(`${leg.label} — ${road.distance_mi} mi by road`, { sticky: true })
+            .addTo(layers.route);
+        } else {
+          L.polyline([leg.from, leg.to],
+                     { color: '#a9b39c', weight: 2, opacity: .7, dashArray: '4 7' })
+            .bindTooltip(`${leg.label} — straight-line estimate, not a road route`,
+                         { sticky: true })
+            .addTo(layers.route);
+        }
+      });
       L.marker([state.start.lat, state.start.lon], { icon: dot('#eef0e8', 13) })
         .bindTooltip(state.start.label, { direction: 'top' })
         .addTo(layers.route);

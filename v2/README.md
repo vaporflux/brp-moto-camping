@@ -120,16 +120,56 @@ it, `false` means someone recorded its absence, `null` means nobody has looked. 
 feel useless. "Has showers" keeps only places recorded as having them; everything else
 shows *Showers unknown* rather than being silently dropped.
 
+### Picking a place
+
+A list row shows a name and a milepost, which tells a rider nothing about whether they want
+to sleep there. So tapping a row **previews** it: the map flies to it, drops a marker with
+a dashed line showing how far off the Parkway it actually sits, and a detail card opens
+with price, season, showers, toilets, access notes and the honest "watch out". Committing
+is a second, deliberate tap — *Stay here*.
+
+Every place also carries a hover tooltip and a click handler on the map itself, so the dots
+are identifiable without going near the list.
+
+### Roads off the Parkway
+
+The Parkway needs no router: between junctions it has no alternatives, so the centerline
+sliced between two mileposts *is* the route. Three legs are not on the Parkway and do need
+one — the ride in from the rider's house, the hop off to a campsite or hotel that is not on
+the Parkway, and the ride out to wherever the trip finishes.
+
+Those were previously a straight dashed line on the map and **nothing at all in the
+exported GPX**, which left the Garmin to invent its own way there. `api/route.js` fetches
+real geometry from Google Directions, and it feeds three things:
+
+- the map draws the actual roads, solid where they are real and dashed where they are still
+  an estimate — the distinction is the point;
+- the itinerary shows a collapsible turn list per leg;
+- the exporter hangs shaping points along them, so the GPX pins the intended roads instead
+  of leaving them to the device.
+
+Placement is in travel order, which took a bug to learn: an earlier version appended the
+ride-in points after the final via, routing the rider to the campground and then back down
+their own driveway. The ride in and out get a light touch (4 points) since they are
+ordinary roads the device handles well; the hop off the Parkway gets more (6), because it
+is short, easy to get wrong, and the one the rider cannot work out from a milepost.
+
+**Results are cached with the trip.** Routing needs signal and riding does not, so a trip
+planned at home keeps its roads and its turn list in a dead zone.
+
 ### The one piece of server-side code
 
-`api/places.js` exists because a Vercel environment variable is only a secret if the code
-reading it runs on Vercel. A static page's JavaScript cannot read one, and inlining it at
+`api/places.js` and `api/route.js` exist because a Vercel environment variable is only a
+secret if the code reading it runs on Vercel. A static page's JavaScript cannot read one, and inlining it at
 build time puts the key in the page source. So the key lives in the function and the
 browser never sees it.
 
-Set `GOOGLE_PLACES_API_KEY` in the Vercel project's environment variables, and restrict the
-key to the Places API in the Google Cloud console as well. The endpoint allows only the
-place types this planner uses — without that it is an open proxy onto a billable account.
+Set `GOOGLE_PLACES_API_KEY` (and `GOOGLE_MAPS_API_KEY`, or reuse the same key) in the
+Vercel project's environment variables, with the Places API and Directions API enabled, and
+restrict the key in the Google Cloud console as well. Both endpoints bound what they will
+proxy — allowed place types, capped radius, capped waypoints — because the URLs are public
+even when the key is not, and without those bounds they are open proxies onto a billable
+account.
 
 ## Behaviour worth knowing before you change it
 

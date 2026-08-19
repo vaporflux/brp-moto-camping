@@ -142,6 +142,35 @@ const Router = (() => {
     return out;
   }
 
+  /* Shaping points along an off-Parkway leg, from real road geometry.
+   *
+   * Without this the exported GPX has a via point at the campsite and nothing between, so
+   * the device picks its own way off the Parkway -- which is exactly the failure the
+   * Parkway shaping points exist to prevent, just on a different stretch of road. With the
+   * router's polyline we can pin the intended roads the same way.
+   *
+   * Spaced by distance along the polyline, not by vertex, because a decoded polyline is
+   * dense in corners and sparse on straights. */
+  function shapeOffParkway(polyline, spacingMi = 3, maxPoints = 8) {
+    if (!polyline || polyline.length < 3) return [];
+    const cum = [0];
+    for (let i = 1; i < polyline.length; i++) {
+      cum.push(cum[i - 1] + BRP.haversine(polyline[i - 1], polyline[i]));
+    }
+    const total = cum[cum.length - 1];
+    if (total <= spacingMi) return [];
+    const n = Math.min(Math.floor(total / spacingMi), maxPoints);
+    const out = [];
+    for (let k = 1; k <= n; k++) {
+      const target = total * k / (n + 1);
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < target) i++;
+      out.push({ lat: polyline[i][0], lon: polyline[i][1], type: 'shaping',
+                 reason: 'off-Parkway road', offParkway: true });
+    }
+    return out;
+  }
+
   function buildDay(stops, spacingMi = DEFAULT_SPACING_MI) {
     if (stops.length < 2) throw new RouteError('A day needs at least a start and an end.');
     let rtepts = [{ ...stops[0], type: 'via', reason: 'day start' }];
@@ -278,6 +307,7 @@ const Router = (() => {
 
   return {
     RouteError, sliceParkway, buildDay, splitDay, fitsBudget, tripFuelGaps, placeable,
+    shapeOffParkway,
     PROFILES, setProfile, DEFAULT_SPACING_MI, MAX_TRKPT,
     get profile() { return profile; },
     get MAX_TOTAL_RTEPT() { return profile.total; },
@@ -618,4 +648,46 @@ const Geocode = (() => {
   }
 
   return { search, parseLatLon };
+})();
+
+/* Road routing for the legs that are not on the Parkway.
+ *
+ * The Parkway needs no router -- between junctions it has no alternatives. Everything else
+ * does: the ride in from the rider's house, the ride out to wherever they finish, and the
+ * hop off the Parkway to a campsite or hotel that is not on it. Those legs were previously
+ * a straight dashed line on the map and nothing at all in the exported GPX, which left the
+ * Garmin free to invent its own way there.
+ *
+ * Results are CACHED in the trip, deliberately. Routing needs signal and riding does not,
+ * so a trip planned at home keeps its real geometry and turn list in a gap. That is also
+ * why the cache is keyed on rounded coordinates: a jiggle of a few metres should reuse the
+ * answer rather than spend another billable request.
+ */
+const Directions = (() => {
+  const cache = new Map();
+  const key = (a, b) => `${a[0].toFixed(4)},${a[1].toFixed(4)}->${b[0].toFixed(4)},${b[1].toFixed(4)}`;
+
+  function seed(entries) {
+    for (const [k, v] of Object.entries(entries || {})) cache.set(k, v);
+  }
+  const dump = () => Object.fromEntries(cache);
+  const peek = (a, b) => cache.get(key(a, b)) || null;
+
+  async function fetchLeg(a, b) {
+    const k = key(a, b);
+    if (cache.has(k)) return cache.get(k);
+    const url = `/api/route?olat=${a[0]}&olon=${a[1]}&dlat=${b[0]}&dlon=${b[1]}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) {
+      const err = { ok: false, error: data.error || 'Routing failed.', hint: data.hint };
+      cache.set(k, err);
+      return err;
+    }
+    const val = { ok: true, ...data };
+    cache.set(k, val);
+    return val;
+  }
+
+  return { fetchLeg, seed, dump, peek, key };
 })();
