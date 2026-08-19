@@ -1039,8 +1039,18 @@
     const steps = el('div', 'day');
     steps.append(stepRow('HOME', state.start.label,
                          `Ride ~${c.approachMi} mi to the Parkway`));
+    // A 150 mile approach when a 64 mile one is visibly nearer reads as a broken planner.
+    // It is not: the nearer entrance is on the far side of a Helene break and cannot reach
+    // this stop on the Parkway at all. Say which entrance, and how much it would have
+    // saved, so the rider can weigh moving the stop instead of just distrusting the plan.
+    const sev = c.severedAlternative;
     steps.append(stepRow(`MP ${c.mp}`, `Get on the Parkway — ${c.name}`,
-                         'Closest entry from where you are starting'));
+                         sev
+                           ? `Closest entry that can actually reach your stop. `
+                             + `MP ${sev.mp} (${sev.name}) is ${sev.savedMi} mi nearer to `
+                             + `you, but the Parkway is severed between there and here, so `
+                             + `it cannot get you to this stop.`
+                           : 'Closest entry from where you are starting'));
     if (f.ok) {
       f.stops.forEach(stop => {
         // Greedy planning rides each tank to its limit, which minimises stops but can

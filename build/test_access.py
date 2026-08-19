@@ -194,6 +194,28 @@ def main():
     check("exits stay in the same component as the rider",
           all(o["component"] == net.segment_at_mp(443.1).component for o in outs))
 
+    print("a severed Parkway explains itself")
+    # Knoxville sits closer to the Cherokee end than to anywhere else on the Parkway, but
+    # the Helene closures put Cherokee in a different component. For a stop north of the
+    # break the planner must send the rider the long way round, and it has to say why.
+    KNOX = (35.9606, -83.9207)
+    north = A.best_access_points(model, net, jx, KNOX, 317.4, top_n=1)[0]
+    south = A.best_access_points(model, net, jx, KNOX, 382.6, top_n=1)[0]
+    check("a stop north of the break enters north of it",
+          north["mp"] == 317.5, str(north["mp"]))
+    check("even though the ride in is far longer",
+          north["approach_mi"] > 140, str(north["approach_mi"]))
+    check("the nearer entrance it could not use is named",
+          north["severed_alternative"] and north["severed_alternative"]["mp"] == 469.1,
+          str(north["severed_alternative"]))
+    check("and how much it would have saved",
+          north["severed_alternative"]["saved_mi"] > 80,
+          str(north["severed_alternative"]))
+    check("a stop south of the break does use Cherokee",
+          south["mp"] == 469.1, str(south["mp"]))
+    check("and carries no explanation, because none is owed",
+          south["severed_alternative"] is None, str(south["severed_alternative"]))
+
     print("greedy picks the furthest reachable pump")
     if plan["ok"] and plan["stops"]:
         first = plan["stops"][0]

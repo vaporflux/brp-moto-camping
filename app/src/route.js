@@ -403,19 +403,43 @@ const Access = (() => {
   function bestAccessPoints(start, destMp, topN = 3, mode = 'soonest') {
     const destSeg = BRP.segmentAtMp(destMp);
     if (!destSeg) throw new RouteErrorLite(`MP ${destMp} is not on open Parkway in 2026.`);
-    return accessPoints()
-      .filter(p => p.component === destSeg.component)
-      .map(p => {
-        const approach = approachMi(start, [p.lat, p.lon]);
-        const parkway = Math.abs(destMp - p.mp);
-        return { ...p, approachMi: Math.round(approach * 10) / 10,
-                 parkwayMi: Math.round(parkway * 10) / 10,
-                 totalMi: Math.round((approach + parkway) * 10) / 10 };
-      })
-      .sort((a, b) => mode === 'soonest'
-        ? (a.approachMi - b.approachMi) || (a.totalMi - b.totalMi)
-        : a.totalMi - b.totalMi)
-      .slice(0, topN);
+    const measured = accessPoints().map(p => {
+      const approach = approachMi(start, [p.lat, p.lon]);
+      const parkway = Math.abs(destMp - p.mp);
+      return { ...p, approachMi: Math.round(approach * 10) / 10,
+               parkwayMi: Math.round(parkway * 10) / 10,
+               totalMi: Math.round((approach + parkway) * 10) / 10 };
+    });
+    const order = (a, b) => mode === 'soonest'
+      ? (a.approachMi - b.approachMi) || (a.totalMi - b.totalMi)
+      : a.totalMi - b.totalMi;
+
+    const reachable = measured.filter(p => p.component === destSeg.component).sort(order);
+    if (!reachable.length) return [];
+
+    /* Why not the nearest entrance of all?
+     *
+     * The Helene closures cut the Parkway into three pieces that do not connect to each
+     * other, so an entrance in another piece cannot reach this destination however close
+     * it is to the rider. From Knoxville, Cherokee is 64 road miles away and Linville
+     * Falls is 150 -- and if the stop is north of the break, Cherokee is useless and the
+     * planner sends the rider on the 150 mile approach.
+     *
+     * That is the right answer and it looks like a bug, so the nearer-but-severed entrance
+     * travels with the result and the plan says so out loud. A rider who is told "the
+     * Parkway is severed, the south end cannot reach your stop" can decide to move the
+     * stop. A rider shown an unexplained 150 mile ride just distrusts the app.
+     */
+    const best = reachable[0];
+    const nearerSevered = measured
+      .filter(p => p.component !== destSeg.component && p.approachMi < best.approachMi)
+      .sort((a, b) => a.approachMi - b.approachMi)[0] || null;
+    best.severedAlternative = nearerSevered
+      ? { mp: nearerSevered.mp, name: nearerSevered.name,
+          approachMi: nearerSevered.approachMi,
+          savedMi: Math.round((best.approachMi - nearerSevered.approachMi) * 10) / 10 }
+      : null;
+    return reachable.slice(0, topN);
   }
 
   class RouteErrorLite extends Error {}
