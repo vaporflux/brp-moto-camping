@@ -222,6 +222,56 @@ def main():
     check("and carries the status so the card can say so",
           kept and kept[0]["business_status"] == "CLOSED_TEMPORARILY")
 
+    print("Google-discovered fuel is usable, and visibly a weaker claim")
+    report = {"exits": [{"mp": 100.0, "discovered": [
+        {"google_id": "g1", "name": "Ridge Exxon", "lat": 36.4386, "lon": -80.9126,
+         "status": "OPERATIONAL", "phone": "(336) 555-0101",
+         "address": "12 Main St, Sparta, NC", "hours": ["Monday: Open 24 hours"]},
+        {"google_id": "g2", "name": "Shut Shell", "lat": 36.4390, "lon": -80.9130,
+         "status": "CLOSED_PERMANENTLY"},
+        {"google_id": "g1", "name": "Ridge Exxon", "lat": 36.4386, "lon": -80.9126,
+         "status": "OPERATIONAL"},
+    ]}]}
+    disc = S.discovered_fuel(model, report)
+    check("a closed pump never becomes a fuel stop", len(disc) == 1, str(len(disc)))
+    check("the same pump found at two exits arrives once",
+          sum(1 for d in disc if d["google_id"] == "g1") == 1)
+    check("it is anchored to its own nearest milepost, not the exit that surfaced it",
+          disc[0]["mp"] != 100.0, str(disc[0]["mp"]))
+    check("and remembers which exit surfaced it", disc[0]["found_near_exit_mp"] == 100.0)
+    check("Google's phone number rides along",
+          disc[0]["stations"][0]["phone"] == "(336) 555-0101")
+
+    built = S.build_fuel(model, net, disc)
+    check("a Google pump is usable for planning",
+          built[0]["plan_grade"] in S.USABLE_GRADES, built[0]["plan_grade"])
+    # The whole point of a separate grade: it must never read as researched.
+    check("but never as 'usable', which means researched",
+          built[0]["plan_grade"] == "usable_google", built[0]["plan_grade"])
+    check("and its confidence says where it came from",
+          built[0]["confidence"] == "google")
+    check("its detour is measured the same way as every other record",
+          built[0]["detour_plan_mi"] is not None)
+
+    # Adding fuel can only ever shrink a gap. This caught a real bug in my own analysis:
+    # fuel_gaps walks its input in milepost order, and an unsorted merge reported gaps
+    # getting LARGER after adding stations.
+    base = S.build_fuel(model, net, json.load(open(f"{DATA}/fuel.json")))
+    both = S.build_fuel(model, net,
+                        json.load(open(f"{DATA}/fuel.json"))
+                        + S.discovered_fuel(model, S.load_verification(DATA) or {"exits": []}))
+    for limit in (5, 8, 12, 18):
+        b = S.fuel_gaps(base, net, max_detour_mi=limit)
+        a = S.fuel_gaps(both, net, max_detour_mi=limit)
+        check(f"more fuel never widens the worst gap at a {limit} mi detour",
+              a[0]["gap_mi"] <= b[0]["gap_mi"] + 1e-9,
+              f"{b[0]['gap_mi']} -> {a[0]['gap_mi']}")
+    b8 = S.fuel_gaps(base, net, max_detour_mi=8)
+    a8 = S.fuel_gaps(both, net, max_detour_mi=8)
+    check("and at 8 mi it closes every gap over 40 miles",
+          sum(1 for g in a8 if g["gap_mi"] > 40) == 0,
+          f"{sum(1 for g in b8 if g['gap_mi'] > 40)} -> {sum(1 for g in a8 if g['gap_mi'] > 40)}")
+
     print("junctions")
     check("coverage is declared incomplete, not assumed complete",
           "complete" in J.__doc__ or True)

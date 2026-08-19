@@ -53,7 +53,14 @@ def main():
     enrichment = P.load_enrichment(DATA)
     all_places = P.build(model, net, json.load(open(f"{DATA}/campgrounds.json")),
                          osm, enrichment)
-    fuel = S.build_fuel(model, net, json.load(open(f"{DATA}/fuel.json")))
+    # The researched exits, plus whatever Google turned up that nobody had recorded. Both
+    # go through build_fuel so the detour to each is measured the same way; the "google"
+    # confidence is what keeps them distinguishable afterwards.
+    raw_fuel = json.load(open(f"{DATA}/fuel.json"))
+    verification = S.load_verification(DATA)
+    if verification:
+        raw_fuel = raw_fuel + S.discovered_fuel(model, verification)
+    fuel = S.build_fuel(model, net, raw_fuel)
     closures_raw = json.load(open(f"{DATA}/closures.json"))
 
     bundle = {
