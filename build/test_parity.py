@@ -38,13 +38,44 @@ const { chromium } = require('playwright');
       track: Gpx.exportTrackOnly(day, 'BRP D1 parity'),
       nTotal: day.nTotal, nVia: day.nVia, nJunction: day.nJunctionPoints,
       parkwayMi: day.parkwayMi, maxSpan: day.maxUnprotectedSpanMi,
-      rtepts: day.rtepts.map(r => [r.type, +r.mp.toFixed(4), +r.lat.toFixed(6), +r.lon.toFixed(6)])
+      rtepts: day.rtepts.map(r => [r.type, +r.mp.toFixed(4), +r.lat.toFixed(6), +r.lon.toFixed(6)]),
+      // A day whose geometry is several disconnected runs -- an approach road, a stretch
+      // of Parkway, a hop out to a campsite. Concatenating these into one <trkseg> is what
+      // drew a straight line back across the map and put the same break in the GPX.
+      segs: (() => {
+        const runs = [[[35.10, -82.10], [35.11, -82.11], [35.12, -82.12]],
+                      [[36.50, -81.00], [36.51, -81.01]],
+                      [[35.90, -82.40], [35.91, -82.41], [35.92, -82.42]]];
+        const day2 = { ...day, trackSegments: runs, track: runs.flat() };
+        const xml = Gpx.exportTrackOnly(day2, 'BRP seg test');
+        const order = [...xml.matchAll(/<trkpt lat="([-\d.]+)"/g)].map(m => +m[1]);
+        return { nSeg: (xml.match(/<trkseg>/g) || []).length,
+                 nTrk: (xml.match(/<trk>/g) || []).length,
+                 nPt: order.length,
+                 firstOfEach: order.filter((_, i) => [0, 3, 5].includes(i)) };
+      })()
     };
   });
   console.log(JSON.stringify(out));
   await b.close();
 })();
 """
+
+
+def _global_node_modules():
+    """Where `npm root -g` puts things, without shelling out to npm on every run."""
+    found = []
+    try:
+        r = subprocess.run(["npm", "root", "-g"], capture_output=True, text=True, timeout=30)
+        if r.returncode == 0 and r.stdout.strip():
+            found.append(r.stdout.strip())
+    except Exception:
+        pass
+    for guess in ("/opt/node22/lib/node_modules", "/usr/lib/node_modules",
+                  "/usr/local/lib/node_modules"):
+        if guess not in found and os.path.isdir(guess):
+            found.append(guess)
+    return found
 
 
 def main():
@@ -55,9 +86,13 @@ def main():
     driver = os.path.join(scratch, "parity_driver.js")
     with open(driver, "w") as f:
         f.write(DRIVER)
+    # Playwright is installed globally here, not beside the driver. Pointing NODE_PATH at a
+    # directory that does not exist makes require() fail and the whole gate skip in silence,
+    # which is worse than no gate at all -- it reads as a pass.
+    search = [os.path.join(scratch, "node_modules"), *_global_node_modules()]
     env = {**os.environ, "CHROME": CHROME,
            "PAGE": os.path.join(ROOT, "index.html"),
-           "NODE_PATH": os.path.join(scratch, "node_modules")}
+           "NODE_PATH": os.pathsep.join(search)}
     try:
         raw = subprocess.run(["node", driver], capture_output=True, text=True,
                              env=env, timeout=120, cwd=scratch)
@@ -155,6 +190,16 @@ def main():
             repeats.append(key)
         seen.add(key)
     check("no repeated track point anywhere in the day", repeats[:3], [])
+
+    # Regression guard. The road legs only exist in the browser, so this behaviour has no
+    # Python counterpart to compare against -- but it is the thing that put a straight line
+    # across the rider's map, so it is asserted outright rather than left to inspection.
+    print("track segments stay separate")
+    seg = js["segs"]
+    check("one <trk> holding every run", seg["nTrk"], 1)
+    check("one <trkseg> per run, not one for all of them", seg["nSeg"], 3)
+    check("no run is dropped", seg["nPt"], 8)
+    check("runs are emitted in travel order", seg["firstOfEach"], [35.1, 36.5, 35.9])
 
     print()
     if failures:

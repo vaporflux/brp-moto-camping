@@ -73,13 +73,23 @@ const Gpx = (() => {
     return lines.join('\n');
   }
 
-  const trk = (name, points, colour = 'Blue') =>
-    ['  <trk>', `    <name>${esc(safeName(name + ' track', 40))}</name>`,
-     '    <extensions>', '      <gpxx:TrackExtension>',
-     `        <gpxx:DisplayColor>${colour}</gpxx:DisplayColor>`,
-     '      </gpxx:TrackExtension>', '    </extensions>', '    <trkseg>',
-     points.map(p => `        <trkpt lat="${p[0].toFixed(7)}" lon="${p[1].toFixed(7)}" />`).join('\n'),
-     '    </trkseg>', '  </trk>'].join('\n');
+  /* One <trkseg> per continuous run.
+   *
+   * A ride off the Parkway and back is genuinely discontinuous from the Parkway line, and
+   * GPX has segments for exactly that. Flattening them into one <trkseg> draws a straight
+   * line from wherever the Parkway ended to wherever the road leg started -- on the device
+   * as well as on the map. */
+  const trk = (name, runs, colour = 'Blue') => {
+    const segs = (Array.isArray(runs[0]?.[0]) ? runs : [runs]).filter(r => r && r.length > 1);
+    return ['  <trk>', `    <name>${esc(safeName(name + ' track', 40))}</name>`,
+      '    <extensions>', '      <gpxx:TrackExtension>',
+      `        <gpxx:DisplayColor>${colour}</gpxx:DisplayColor>`,
+      '      </gpxx:TrackExtension>', '    </extensions>',
+      ...segs.map(seg => ['    <trkseg>',
+        seg.map(p => `        <trkpt lat="${p[0].toFixed(7)}" lon="${p[1].toFixed(7)}" />`).join('\n'),
+        '    </trkseg>'].join('\n')),
+      '  </trk>'].join('\n');
+  };
 
   function exportRoute(day, routeName, title) {
     const name = safeName(routeName);
@@ -92,7 +102,7 @@ const Gpx = (() => {
       '        <gpxx:IsAutoNamed>false</gpxx:IsAutoNamed>',
       '        <gpxx:DisplayColor>Magenta</gpxx:DisplayColor>',
       '      </gpxx:RouteExtension>', '    </extensions>',
-      day.rtepts.map(rtept).join('\n'), '  </rte>', trk(name, day.track), '</gpx>\n'
+      day.rtepts.map(rtept).join('\n'), '  </rte>', trk(name, day.trackSegments || day.track), '</gpx>\n'
     ].join('\n');
   }
 
@@ -102,7 +112,7 @@ const Gpx = (() => {
     const name = safeName(routeName);
     return [header((title || routeName) + ' (track)'),
             ...day.rtepts.filter(p => p.type === 'via').map(wpt),
-            trk(name, day.track), '</gpx>\n'].join('\n');
+            trk(name, day.trackSegments || day.track), '</gpx>\n'].join('\n');
   }
 
   function exportWaypointsOnly(day, routeName, title) {

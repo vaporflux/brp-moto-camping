@@ -1315,13 +1315,23 @@ const Gpx = (() => {
     return lines.join('\n');
   }
 
-  const trk = (name, points, colour = 'Blue') =>
-    ['  <trk>', `    <name>${esc(safeName(name + ' track', 40))}</name>`,
-     '    <extensions>', '      <gpxx:TrackExtension>',
-     `        <gpxx:DisplayColor>${colour}</gpxx:DisplayColor>`,
-     '      </gpxx:TrackExtension>', '    </extensions>', '    <trkseg>',
-     points.map(p => `        <trkpt lat="${p[0].toFixed(7)}" lon="${p[1].toFixed(7)}" />`).join('\n'),
-     '    </trkseg>', '  </trk>'].join('\n');
+  /* One <trkseg> per continuous run.
+   *
+   * A ride off the Parkway and back is genuinely discontinuous from the Parkway line, and
+   * GPX has segments for exactly that. Flattening them into one <trkseg> draws a straight
+   * line from wherever the Parkway ended to wherever the road leg started -- on the device
+   * as well as on the map. */
+  const trk = (name, runs, colour = 'Blue') => {
+    const segs = (Array.isArray(runs[0]?.[0]) ? runs : [runs]).filter(r => r && r.length > 1);
+    return ['  <trk>', `    <name>${esc(safeName(name + ' track', 40))}</name>`,
+      '    <extensions>', '      <gpxx:TrackExtension>',
+      `        <gpxx:DisplayColor>${colour}</gpxx:DisplayColor>`,
+      '      </gpxx:TrackExtension>', '    </extensions>',
+      ...segs.map(seg => ['    <trkseg>',
+        seg.map(p => `        <trkpt lat="${p[0].toFixed(7)}" lon="${p[1].toFixed(7)}" />`).join('\n'),
+        '    </trkseg>'].join('\n')),
+      '  </trk>'].join('\n');
+  };
 
   function exportRoute(day, routeName, title) {
     const name = safeName(routeName);
@@ -1334,7 +1344,7 @@ const Gpx = (() => {
       '        <gpxx:IsAutoNamed>false</gpxx:IsAutoNamed>',
       '        <gpxx:DisplayColor>Magenta</gpxx:DisplayColor>',
       '      </gpxx:RouteExtension>', '    </extensions>',
-      day.rtepts.map(rtept).join('\n'), '  </rte>', trk(name, day.track), '</gpx>\n'
+      day.rtepts.map(rtept).join('\n'), '  </rte>', trk(name, day.trackSegments || day.track), '</gpx>\n'
     ].join('\n');
   }
 
@@ -1344,7 +1354,7 @@ const Gpx = (() => {
     const name = safeName(routeName);
     return [header((title || routeName) + ' (track)'),
             ...day.rtepts.filter(p => p.type === 'via').map(wpt),
-            trk(name, day.track), '</gpx>\n'].join('\n');
+            trk(name, day.trackSegments || day.track), '</gpx>\n'].join('\n');
   }
 
   function exportWaypointsOnly(day, routeName, title) {
@@ -1545,19 +1555,11 @@ const Gpx = (() => {
   function withRoadGeometry(day, trip) {
     if (!trip || trip.error || !day || !day.rtepts) return day;
     const extras = [];
-    const trackAdds = [];
     (trip.roadLegs || []).forEach(leg => {
       const road = Directions.peek(leg.from, leg.to);
       if (!road || !road.ok || !road.polyline || road.polyline.length < 3) return;
-      trackAdds.push(road.polyline);
-      // Name by where the leg is going, not by the leg's sentence: "SP Ride in to M 1"
-      // is what a truncated label looks like on the device.
-      // safeName strips the period out of "MP 382.5", so name these by what they do.
       const target = leg.stop ? leg.stop.name
                    : leg.id === 'in' ? 'to Parkway' : 'to finish';
-      // The ride in and out are ordinary roads the device handles well, so they get a
-      // light touch. The hop off the Parkway to a campsite is short, easy to get wrong,
-      // and worth spending points on.
       const maxPts = leg.stop ? 6 : 4;
       Router.shapeOffParkway(road.polyline, 3, maxPts).forEach((pt, i) => {
         extras.push({ ...pt, mp: null,
@@ -1566,27 +1568,21 @@ const Gpx = (() => {
                       name: `SP ${Gpx.safeName(target, 14)} ${i + 1}` });
       });
     });
-    if (!extras.length && !trackAdds.length) return day;
+
+    const segments = trackSegmentsFor(day, trip);
+    if (!extras.length && !segments) return day;
 
     const room = Router.MAX_TOTAL_RTEPT - day.nTotal;
     const kept = extras.slice(0, Math.max(0, room));
     const merged = { ...day };
     if (kept.length) {
-      // Travel order is not negotiable. Points for the ride IN belong before the first
-      // via; points for a hop off the Parkway belong just before the stop they serve;
-      // points for the ride OUT belong at the end. Appending them all -- which an earlier
-      // version did whenever the name match missed -- routes the rider to the campground
-      // and then back down their own driveway.
       const pts = [...day.rtepts];
       const anchorIndex = leg => {
-        // After the start via, not before it: the rider leaves home first, then follows
-        // these roads to the Parkway.
         if (leg.legId === 'in') return 1;
         if (leg.legId === 'out') return pts.length;
         const at = pts.findIndex(r => r.type === 'via' && r.id === leg.stopId);
         return at >= 0 ? at : pts.length;
       };
-      // Insert from the back so earlier indices stay valid.
       const groups = [...new Set(kept.map(k => k.legId))]
         .map(id => ({ legId: id, stopId: kept.find(k => k.legId === id).stopId,
                       points: kept.filter(k => k.legId === id) }))
@@ -1596,13 +1592,61 @@ const Gpx = (() => {
       merged.nTotal = pts.length;
       merged.nVia = pts.filter(r => r.type === 'via').length;
     }
-    if (trackAdds.length) {
-      merged.track = [...day.track];
-      trackAdds.forEach(poly => merged.track.push(...poly));
+    if (segments) {
+      merged.trackSegments = segments;
+      merged.track = segments.flat();
     }
-    merged.roadGeometry = trackAdds.length;
     merged.droppedOffParkwayPoints = extras.length - kept.length;
     return merged;
+  }
+
+  /* The day's geometry as ORDERED, SEPARATE segments.
+   *
+   * These used to be concatenated into one array: the Parkway slice, then every road
+   * polyline appended on the end. Drawn as a single line that jumps from the last Parkway
+   * point back to the rider's front door and across the map again for each road leg --
+   * the crisscross. The exported GPX track had the same break in it.
+   *
+   * They are separate because they genuinely are separate: a rider leaves the Parkway,
+   * rides some roads, and rejoins. GPX has <trkseg> for exactly this, and Leaflet wants
+   * one polyline per continuous run.
+   */
+  function trackSegmentsFor(day, trip) {
+    const roadFor = id => {
+      const leg = (trip.roadLegs || []).find(l => l.id === id);
+      if (!leg) return null;
+      const r = Directions.peek(leg.from, leg.to);
+      return r && r.ok && r.polyline && r.polyline.length > 1 ? r.polyline : null;
+    };
+
+    const segs = [];
+    const stops = day.stops || [];
+    if (!stops.length) return null;
+
+    if (stops[0] && stops[0].id === 'start') {
+      const approach = roadFor('in');
+      if (approach) segs.push(approach);
+    }
+    for (let i = 0; i < stops.length - 1; i++) {
+      try {
+        const slice = Router.sliceParkway(stops[i].mp, stops[i + 1].mp);
+        if (slice.length > 1) segs.push(slice);
+      } catch (e) { /* severed: the planner already refused, nothing to draw */ }
+      const hop = roadFor(`off-${stops[i + 1].id}`);
+      if (hop) { segs.push(hop); segs.push([...hop].reverse()); }
+    }
+    // The ride back to the exit point, and off the Parkway to the finish. Only on the
+    // last day, and only once -- this leg was previously missing from the track entirely.
+    const isLastDay = stops[stops.length - 1] === state.stops[state.stops.length - 1];
+    if (isLastDay && trip.exitPoint) {
+      try {
+        const slice = Router.sliceParkway(stops[stops.length - 1].mp, trip.exitPoint.mp);
+        if (slice.length > 1) segs.push(slice);
+      } catch (e) { /* nothing to draw */ }
+      const out = roadFor('out');
+      if (out) segs.push(out);
+    }
+    return segs.length ? segs : null;
   }
 
   function buildDays() {
@@ -1926,7 +1970,7 @@ const Gpx = (() => {
     const kindRow = el('div', 'chip-row');
     kindRow.style.margin = '9px 0 6px';
     for (const [key, label] of [['all', 'Anywhere'], ['campground', 'Campgrounds'],
-                                ['hotel', 'Hotels & motels']]) {
+                                ['koa', 'KOA'], ['hotel', 'Hotels & motels']]) {
       const c = el('button', `chip${state.stayKind === key ? ' on' : ''}`, label);
       c.onclick = () => { state.stayKind = key; render(); };
       kindRow.append(c);
@@ -1966,7 +2010,11 @@ const Gpx = (() => {
       const pool = [...(D.places || []), ...(state.googleResults || [])];
       return pool
         .filter(c => !state.stops.some(st => st.id === c.id))
-        .filter(c => state.stayKind === 'all' || c.kind === state.stayKind)
+        // KOA is a brand, not a kind: it matches on the name across every source, so a
+        // KOA that arrives from OSM or Google is caught the same as a curated one.
+        .filter(c => state.stayKind === 'all'
+                  || (state.stayKind === 'koa' ? /\bkoa\b/i.test(c.name)
+                                               : c.kind === state.stayKind))
         .filter(c => !state.stayShowers || c.showers === true)
         .filter(c => !state.stayToilets || c.toilets === true)
         .filter(c => (c.off_parkway_mi ?? 0) <= state.stayWithinMi)
@@ -2126,15 +2174,29 @@ const Gpx = (() => {
     }
   }
 
-  /* Live Google Places lookup. Optional by design: it needs signal and a configured key,
-   * and the rest of the planner does not. Results are session-only -- Google's terms
-   * restrict retaining Places content, so nothing is written to localStorage or the
-   * bundle. */
+  /* Live Google Places lookup, along the WHOLE Parkway.
+   *
+   * This searched a single point -- the map centre snapped to the Parkway -- which
+   * answered "what is near this bit" when the question is "what is anywhere along the
+   * route". One circle cannot cover 469 miles, so it walks the rideable Parkway in steps
+   * and merges the results.
+   *
+   * That means several billable requests per press, so the count is stated up front and
+   * the step is sized from the rider's own distance filter: a wider filter needs fewer,
+   * larger circles. Results are session-only -- Google's terms restrict retaining Places
+   * content, so nothing is written to localStorage or the bundle.
+   */
   function googleSearchRow() {
     const wrap = el('div');
     wrap.style.marginTop = '10px';
     const row = el('div', 'btn-row');
-    const btn = el('button', 'btn sm ghost', 'Also search Google near this stretch');
+    const withinMi = Math.min(state.stayWithinMi, 25);
+    const samples = parkwaySamples(withinMi);
+    const what = state.stayKind === 'hotel' ? 'hotels & motels'
+               : state.stayKind === 'koa' ? 'KOA campgrounds'
+               : state.stayKind === 'campground' ? 'campgrounds' : 'places to stay';
+    const btn = el('button', 'btn sm ghost',
+      `Search Google for ${what} along the whole Parkway`);
     const status = el('div', 'tiny');
     status.style.marginTop = '6px';
     if (state.googleNote) status.textContent = state.googleNote;
@@ -2147,58 +2209,71 @@ const Gpx = (() => {
     wrap.append(row, status);
     const hint = el('div', 'tiny');
     hint.style.marginTop = '4px';
-    hint.textContent = 'Searches the Parkway nearest the middle of the map — pan the map to '
-                     + 'look somewhere else.';
+    hint.textContent = `Walks the Parkway end to end in ${samples.length} steps, `
+                     + `${withinMi} mi either side. That is ${samples.length} Google `
+                     + `searches — they are billed per request.`;
     wrap.append(hint);
 
     btn.onclick = async () => {
-      // Anchor on the PARKWAY, near whatever the rider is looking at.
-      //
-      // This previously searched around the start address when no stop was picked yet,
-      // which for a rider 90 miles away returned their own town's hotels -- every one of
-      // which the "within N mi of the Parkway" filter then discarded. The button said
-      // "near the Parkway" and searched nowhere near it, and the failure was silent.
-      const centre = map ? map.getCenter() : null;
-      const seed = state.stops.length
-        ? BRP.coordAtMp(state.stops[state.stops.length - 1].mp)
-        : centre ? [centre.lat, centre.lng]
-        : state.start ? [state.start.lat, state.start.lon] : null;
-      if (!seed) { status.textContent = 'Set a starting point first.'; return; }
-      const near = BRP.nearestVertex(seed[0], seed[1]);
-      const [lat, lon] = BRP.coordAtMp(near.mp);
-      status.textContent = 'Searching Google\u2026';
-      try {
-        const type = state.stayKind === 'campground' ? 'campground' : 'lodging';
-        const radius = Math.min(state.stayWithinMi, 25) * 1609;
-        const res = await fetch(`/api/places?lat=${lat}&lon=${lon}`
-                              + `&radius_m=${Math.round(radius)}&type=${type}`);
-        const data = await res.json();
-        if (!res.ok) { status.textContent = data.error || 'Google search failed.'; return; }
-        const hits = (data.places || []).map(g => {
-          const n = BRP.nearestVertex(g.lat, g.lon);
-          return { ...g, id: `google-${g.id}`,
-                   kind: type === 'campground' ? 'campground' : 'hotel',
-                   mp: n.mp, off_parkway_mi: Math.round(n.distance * 100) / 100,
-                   showers: null, toilets: null };
-        }).sort((a, b) => a.off_parkway_mi - b.off_parkway_mi);
-        state.googleResults = hits;
-        // Say what the filters swallowed. A search that returns twenty results and shows
-        // none looks broken, and looking broken is worse than being empty.
-        const shown = hits.filter(h => h.off_parkway_mi <= state.stayWithinMi).length;
-        state.googleNote = hits.length === 0
-          ? 'Google found nothing there. Pan the map somewhere else and try again.'
-          : shown === hits.length
-          ? `Google found ${hits.length}, all within ${state.stayWithinMi} mi of the Parkway.`
-          : `Google found ${hits.length}, but only ${shown} are within ${state.stayWithinMi} mi `
-            + `of the Parkway. The nearest is ${hits[0].off_parkway_mi} mi off — widen the `
-            + `distance filter to see the rest.`;
-        render();
-      } catch (e) {
-        status.textContent = 'Google search needs a connection. Everything already listed '
-                           + 'works offline.';
+      btn.disabled = true;
+      const type = (state.stayKind === 'campground' || state.stayKind === 'koa')
+        ? 'campground' : 'lodging';
+      const radiusM = Math.round(withinMi * 1609);
+      const found = new Map();
+      let failed = null;
+      for (let i = 0; i < samples.length; i++) {
+        status.textContent = `Searching the Parkway… ${i + 1} of ${samples.length}`;
+        const [lat, lon] = samples[i];
+        try {
+          const res = await fetch(`/api/places?lat=${lat}&lon=${lon}`
+                                + `&radius_m=${radiusM}&type=${type}`);
+          const data = await res.json();
+          if (!res.ok) { failed = data.error || 'Google search failed.'; break; }
+          (data.places || []).forEach(g => {
+            if (found.has(g.id)) return;      // circles overlap; the same hotel recurs
+            const n = BRP.nearestVertex(g.lat, g.lon);
+            found.set(g.id, { ...g, id: `google-${g.id}`,
+                              kind: type === 'campground' ? 'campground' : 'hotel',
+                              mp: n.mp, off_parkway_mi: Math.round(n.distance * 100) / 100,
+                              showers: null, toilets: null });
+          });
+        } catch (e) {
+          failed = 'Google search needs a connection.';
+          break;
+        }
       }
+      btn.disabled = false;
+      const hits = [...found.values()]
+        .filter(h => h.off_parkway_mi <= state.stayWithinMi)
+        .sort((a, b) => a.mp - b.mp);
+      state.googleResults = hits;
+      state.googleNote = failed
+        ? `${failed} ${found.size ? `Kept the ${hits.length} found before it stopped.` : ''}`
+        : hits.length
+        ? `Google found ${hits.length} within ${state.stayWithinMi} mi of the Parkway, `
+          + `from MP ${hits[0].mp.toFixed(0)} to MP ${hits[hits.length - 1].mp.toFixed(0)}.`
+        : 'Google found nothing within that distance of the Parkway. Try widening it.';
+      render();
     };
     return wrap;
+  }
+
+  /* Points along the rideable Parkway to search around.
+   *
+   * Stepped at about 1.5x the search radius so the circles overlap rather than leaving
+   * gaps between them, and capped so one press cannot fire an unbounded number of
+   * billable requests. Only open segments -- searching a closed stretch spends money to
+   * find hotels nobody can ride to.
+   */
+  function parkwaySamples(radiusMi, maxSamples = 22) {
+    const stepMi = Math.max(8, radiusMi * 1.5);
+    const pts = [];
+    (D.segments || []).forEach(seg => {
+      for (let mp = seg.from_mp; mp <= seg.to_mp; mp += stepMi) pts.push(mp);
+      if (pts.length === 0 || pts[pts.length - 1] < seg.to_mp - 0.5) pts.push(seg.to_mp);
+    });
+    const stride = Math.max(1, Math.ceil(pts.length / maxSamples));
+    return pts.filter((_, i) => i % stride === 0).map(mp => BRP.coordAtMp(mp));
   }
 
   /* ---- input 3: how you ride ---------------------------------------------------- */
@@ -2991,9 +3066,15 @@ const Gpx = (() => {
 
     buildDays().forEach(day => {
       (day.routes || []).forEach(r => {
-        if (r.track.length) {
-          L.polyline(r.track, { color: '#e0a33e', weight: 5, opacity: .95 }).addTo(layers.route);
-        }
+        // One polyline per continuous run. Drawing r.track as a single line is what
+        // produced the straight lines across the map: the array contains separate runs.
+        const runs = r.trackSegments && r.trackSegments.length ? r.trackSegments
+                   : (r.track.length ? [r.track] : []);
+        runs.forEach(run => {
+          if (run.length > 1) {
+            L.polyline(run, { color: '#e0a33e', weight: 5, opacity: .95 }).addTo(layers.route);
+          }
+        });
         r.rtepts.filter(p => p.type === 'via').forEach(p => {
           L.marker([p.lat, p.lon], { icon: dot('#eef0e8', 14) })
             .bindTooltip(p.name, { direction: 'top' }).addTo(layers.route);
