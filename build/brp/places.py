@@ -29,8 +29,11 @@ someone recorded its absence, None means nobody has looked. A filter that treats
 False hides real campgrounds, which is exactly the failure that makes crowd-sourced data
 feel useless.
 """
+import difflib
 import json
+import math
 import os
+import re
 
 from . import geo
 
@@ -38,6 +41,36 @@ from . import geo
 def _dedupe_key(p):
     """Two records are the same place if the names agree and they are within ~150 m."""
     return (p["name"].strip().lower()[:24], round(p["lat"], 3), round(p["lon"], 3))
+
+
+def _miles(lat1, lon1, lat2, lon2):
+    r = math.radians
+    dlat, dlon = r(lat2 - lat1), r(lon2 - lon1)
+    h = (math.sin(dlat / 2) ** 2
+         + math.cos(r(lat1)) * math.cos(r(lat2)) * math.sin(dlon / 2) ** 2)
+    return 2 * 3958.8 * math.asin(math.sqrt(h))
+
+
+def _words(name):
+    return set(re.sub(r"[^a-z0-9 ]+", " ", (name or "").lower()).split())
+
+
+def _same_place(name_a, name_b):
+    """Do two names, at the same spot, describe the same business?"""
+    wa, wb = _words(name_a), _words(name_b)
+    if not wa or not wb:
+        return False
+    short, long_ = (wa, wb) if len(wa) <= len(wb) else (wb, wa)
+    if len(short) >= 2 and short <= long_:
+        return True
+    return difflib.SequenceMatcher(None, (name_a or "").lower(),
+                                   (name_b or "").lower()).ratio() >= 0.6
+
+
+# How close two records must sit before their names are even compared. Wider than the ~150 m
+# the rounded key allowed: a curated coordinate taken at the office and an OSM way centroid
+# taken over the whole site are routinely a few hundred metres apart on the same campground.
+_SAME_SITE_MI = 0.4
 
 
 def build(model, net, curated, osm=None, enrichment=None):
@@ -81,6 +114,30 @@ def build(model, net, curated, osm=None, enrichment=None):
         })
 
     seen = {_dedupe_key(p) for p in out}
+
+    # One Google place, one row.
+    #
+    # OSM often carries a hotel as several ways -- the main building, an annexe, a parking
+    # polygon -- each a separate record with its own name and centroid. _dedupe_key() cannot
+    # see that, because it compares the OSM names, and those differ. Enrichment then renames
+    # every one of them to the same Google name, and the list shows the same hotel two or
+    # three times over. Nine Google places arrived as nineteen rows this way.
+    #
+    # So the Google id decides, and where several OSM records claim the same one, the record
+    # whose coordinate sits closest to Google's wins -- that is the one most likely to be the
+    # building rather than the car park.
+    best_for_google = {}
+    if enrichment is not None:
+        for op in (osm or {}).get("places", []):
+            g = (enrichment.get(op["osm_id"]) or {}).get("match")
+            if not g or not g.get("google_id"):
+                continue
+            gid = g["google_id"]
+            cur = best_for_google.get(gid)
+            if cur is None or g.get("match_distance_mi", 9e9) < cur[1]:
+                best_for_google[gid] = (op["osm_id"], g.get("match_distance_mi", 9e9))
+    winners = {osm_id for osm_id, _ in best_for_google.values()}
+
     for p in (osm or {}).get("places", []):
         key = _dedupe_key(p)
         if key in seen:
@@ -97,6 +154,21 @@ def build(model, net, curated, osm=None, enrichment=None):
             # carrying the status so the card can say so.
             if g.get("business_status") == "CLOSED_PERMANENTLY":
                 continue
+            if g.get("google_id") and p["osm_id"] not in winners:
+                continue      # another OSM record is a better fit for this same Google place
+
+        # Curated wins, judged on where the place IS rather than on a rounded key.
+        #
+        # The rounded-coordinate key misses a curated entry and an OSM way sitting 60 m
+        # apart, and it compares OSM's original name -- but enrichment has since renamed the
+        # OSM row to whatever Google calls it, so the two names it compares are not the two
+        # names that end up on screen. Eight campgrounds shipped twice because of this,
+        # including Raccoon Holler and three KOAs.
+        final_name = (g or {}).get("google_name") or p["name"]
+        if any(_miles(p["lat"], p["lon"], c["lat"], c["lon"]) <= _SAME_SITE_MI
+               and _same_place(final_name, c["name"])
+               for c in out if c["source"] == "curated"):
+            continue
         seen.add(key)
         seg = net.segment_at_mp(p["mp"])
         out.append({
