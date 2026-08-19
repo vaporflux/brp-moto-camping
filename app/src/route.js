@@ -497,15 +497,32 @@ const Access = (() => {
    * Parkway, so the rider leaves camp with exactly what they arrived on. Planning each leg
    * from a full tank quietly refuels the bike overnight and produces a plan that fails on
    * the way home. */
+  /* `arriveMinMi` is how much range the rider wants left when they roll up to a pump.
+   *
+   * Greedy planning rides every tank to its limit, which minimises stops and is exactly
+   * why a real trip came back saying "cutting it fine -- about 0.8 mi of planning range
+   * left". Correct, and useless: nobody rides to a station on eight tenths of a mile.
+   *
+   * It works by shortening the tank rather than by adding a rule. If a rider will not go
+   * below 10 miles, then a 200 mile tank is a 190 mile tank for planning purposes, and
+   * every leg the greedy loop plans lands with those 10 miles still in it. One
+   * subtraction, and the whole existing calculation inherits it.
+   */
   function planJourney(opts) {
-    const { waypoints, tankMi, approachLegMi = 0, reserveFrac = 0, maxDetourMi = null,
-            component = null, requireExitFuel = true } = opts;
+    const { waypoints, tankMi, approachLegMi = 0, reserveFrac = 0, arriveMinMi = 0,
+            maxDetourMi = null, component = null, requireExitFuel = true } = opts;
     if (!(tankMi > 0)) return { ok: false, stops: [], notes: [], error: 'Set your tank range first.' };
     if (!waypoints || waypoints.length < 2) {
       return { ok: false, stops: [], notes: [],
                error: 'A journey needs somewhere to start and somewhere to end.' };
     }
-    const planningRange = tankMi * (1 - reserveFrac);
+    const buffer = Math.max(0, arriveMinMi);
+    const planningRange = tankMi * (1 - reserveFrac) - buffer;
+    if (planningRange <= 0) {
+      return { ok: false, stops: [], notes: [],
+               error: `Arriving with ${buffer} mi in hand leaves nothing to ride on from a `
+                    + `${tankMi} mi tank. Lower the buffer or raise the tank range.` };
+    }
 
     const marks = [];
     let pos = 0;
@@ -555,7 +572,9 @@ const Access = (() => {
       }
       const stop = reachable.reduce((m, e) => (e.pos > m.pos ? e : m));
       stops.push({ ...stop,
-                   arriveWithMi: Math.round((remaining - (stop.pos - at) - stop.detourMi) * 10) / 10 });
+                   arriveWithMi: Math.round((remaining - (stop.pos - at) - stop.detourMi) * 10) / 10,
+                   arriveTankMi: Math.round((remaining - (stop.pos - at) - stop.detourMi
+                                             + buffer) * 10) / 10 });
       at = stop.pos;
       remaining = planningRange - stop.detourMi;
     }
@@ -572,7 +591,7 @@ const Access = (() => {
         cur = planningRange - st.detourMi;
         cursor = st.pos;
       }
-      tankAt.push({ mp: wp, tankMi: Math.round((cur - (wpos - cursor)) * 10) / 10 });
+      tankAt.push({ mp: wp, tankMi: Math.round((cur - (wpos - cursor) + buffer) * 10) / 10 });
     });
 
     if (exit.mi != null && exit.stop) {
@@ -589,7 +608,8 @@ const Access = (() => {
              waypointPos,
              exitReserveMi: exit.mi,
              exitReserveStop: exit.stop ? { mp: exit.stop.mp, town: exit.stop.town } : null,
-             arriveWithMi: Math.round((remaining - (journeyMi - at)) * 10) / 10,
+             arriveWithMi: Math.round((remaining - (journeyMi - at) + buffer) * 10) / 10,
+             arriveMinMi: buffer,
              planningRangeMi: Math.round(planningRange * 10) / 10,
              parkwayMi: Math.round(journeyMi * 10) / 10,
              approachMi: Math.round(approachLegMi * 10) / 10,

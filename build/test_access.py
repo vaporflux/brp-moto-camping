@@ -216,6 +216,41 @@ def main():
     check("and carries no explanation, because none is owed",
           south["severed_alternative"] is None, str(south["severed_alternative"]))
 
+    print("arriving with fuel still in the tank")
+    # The trip that prompted this: greedy planning routed a rider into a station on 0.8 mi
+    # of range. Correct arithmetic, useless advice.
+    wp = [291.8, 13.7, 291.8]
+    bare = A.plan_journey(fuel, wp, tank_mi=200, max_detour_mi=8, component=0)
+    # Not pinned to an exact figure: the fuel set grows as verification runs, and the
+    # claim is about the shape of greedy planning, not about one number.
+    check("with no buffer, a stop is reached on less than the default 10 mi",
+          min(s["arrive_tank_mi"] for s in bare["stops"]) < 10,
+          str(min(s["arrive_tank_mi"] for s in bare["stops"])))
+
+    for want in (10, 25, 50):
+        got = A.plan_journey(fuel, wp, tank_mi=200, max_detour_mi=8, component=0,
+                             arrive_min_mi=want)
+        check(f"a {want} mi buffer is honoured at every stop",
+              got["ok"] and all(s["arrive_tank_mi"] >= want - 0.05 for s in got["stops"]),
+              str([s["arrive_tank_mi"] for s in got["stops"]]))
+
+    ten = A.plan_journey(fuel, wp, tank_mi=200, max_detour_mi=8, component=0,
+                         arrive_min_mi=10)
+    fifty = A.plan_journey(fuel, wp, tank_mi=200, max_detour_mi=8, component=0,
+                           arrive_min_mi=50)
+    # More buffer means less usable tank, which means more stops. Never fewer.
+    check("a bigger buffer never means fewer stops",
+          len(bare["stops"]) <= len(ten["stops"]) <= len(fifty["stops"]),
+          f"{len(bare['stops'])} -> {len(ten['stops'])} -> {len(fifty['stops'])}")
+    check("the buffer is reported back", ten["arrive_min_mi"] == 10.0)
+    check("the tank figure at camp includes it",
+          ten["tank_at"][1]["tank_mi"] >= 10)
+    # A buffer that swallows the tank is a contradiction, not a plan.
+    absurd = A.plan_journey(fuel, wp, tank_mi=200, max_detour_mi=8, component=0,
+                            arrive_min_mi=200)
+    check("a buffer as big as the tank is refused, with a reason",
+          not absurd["ok"] and "nothing to ride" in absurd["error"], str(absurd.get("error")))
+
     print("a round trip puts fuel stops on the leg they belong to")
     # Abingdon to Devils Backbone and home: 556 mi of Parkway, entering and leaving at
     # MP 291.8 and camping at MP 13.7. Its two fuel stops fall at mile 186 and mile 378 --
