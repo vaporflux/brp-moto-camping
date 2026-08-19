@@ -153,6 +153,56 @@ def main():
     check("summary counts unknowns separately from absences",
           summ["showers_yes"] == 33 and summ["showers_unknown"] == 1, str(summ))
 
+    print("google enrichment: confirmed places stay, unconfirmed are dropped")
+    # Absent evidence is not evidence of absence. Before enrich_google.py has run there is
+    # no file, and every OSM place must survive -- otherwise the list silently collapses to
+    # the curated 32 and looks like Google rejected everything.
+    check("no enrichment file keeps every OSM place",
+          len(P.build(model, net, curated_raw, fake_osm, None)) == 35)
+
+    enrich = {
+        "n1": {"osm_id": "n1", "match": {
+            "google_id": "g1", "google_name": "Tagged Yes Campground",
+            "phone": "+1 828-555-0101", "url": "https://example.com",
+            "address": "1 Test Rd", "rating": 4.4, "ratings": 210,
+            "hours": ["Monday: Open 24 hours"], "business_status": "OPERATIONAL",
+            "match_distance_mi": 0.08, "match_name_score": 1.0}},
+        "n2": {"osm_id": "n2", "match": None,
+               "rejected_because": "best candidate was 6.20 mi away"},
+        "n3": {"osm_id": "n3", "match": {
+            "google_id": "g3", "google_name": "Untagged Place",
+            "phone": None, "url": None, "address": "3 Test Rd",
+            "rating": None, "ratings": None, "hours": None,
+            "business_status": "OPERATIONAL",
+            "match_distance_mi": 0.10, "match_name_score": 0.9}},
+    }
+    enriched = P.build(model, net, curated_raw, fake_osm, enrich)
+    names = {p["name"]: p for p in enriched}
+    check("a place Google could not confirm is dropped",
+          "Tagged No" not in names, sorted(n for n in names if "Tagged" in n))
+    check("a place with no enrichment record at all is dropped",
+          not any(p["id"] == "osm-n4" for p in enriched))
+    check("curated places are never dropped, whatever Google says",
+          sum(1 for p in enriched if p["source"] == "curated") == 32)
+    check("total is curated plus only the confirmed",
+          len(enriched) == 34, str(len(enriched)))
+
+    yes = names["Tagged Yes Campground"]
+    check("Google's phone number lands on the place", yes["phone"] == "+1 828-555-0101")
+    check("Google's rating lands on the place", yes["rating"] == 4.4)
+    check("a confirmed place is marked verified", yes["verified"] is True)
+    check("Google's name is preferred when it has one",
+          "Tagged Yes Campground" in names and "Tagged Yes" not in names)
+    # Google has no idea whether a campground has showers, so enrichment must not invent an
+    # answer -- an untagged place stays untagged rather than becoming a definite no.
+    check("enrichment does not touch the three-state amenity flags",
+          names["Untagged Place"]["showers"] is None
+          and names["Untagged Place"]["toilets"] is None)
+    check("a confirmed place with no phone at Google keeps a null phone",
+          names["Untagged Place"]["phone"] is None)
+    summ2 = P.summary(enriched)
+    check("summary counts verified separately", summ2["verified"] == 2, str(summ2["verified"]))
+
     print("junctions")
     check("coverage is declared incomplete, not assumed complete",
           "complete" in J.__doc__ or True)

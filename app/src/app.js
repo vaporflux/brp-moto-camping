@@ -606,8 +606,13 @@
         if (c.showers === true) badges.append(el('span', 'badge ok', 'Showers'));
         else if (c.showers === false) badges.append(el('span', 'badge danger', 'No showers'));
         else badges.append(el('span', 'badge warn', 'Showers unknown'));
-        if (c.source === 'osm') badges.append(el('span', 'badge', 'OSM'));
+        if (c.source === 'osm' && c.verified) {
+          badges.append(el('span', 'badge ok', 'Google verified'));
+        } else if (c.source === 'osm') {
+          badges.append(el('span', 'badge', 'OSM'));
+        }
         if (c.source === 'google') badges.append(el('span', 'badge', 'Google'));
+        if (c.phone) badges.append(el('span', 'badge info', 'Phone'));
         if (badges.childElementCount) body.append(badges);
         b.append(body);
         if (state.previewId === c.id) b.classList.add('sel');
@@ -648,7 +653,14 @@
       ['Toilets', c.toilets === true ? 'Yes' : c.toilets === false ? 'No'
                  : 'Not recorded'],
       ['Getting in', c.access], ['Why it works', c.standout],
-      ['Watch out', c.watchout], ['Food', c.food], ['Phone', c.phone]
+      ['Watch out', c.watchout], ['Food', c.food], ['Phone', c.phone],
+      // Google's contribution. A rating with no count behind it says nothing, so the
+      // count travels with it.
+      ['Rating', c.rating != null
+        ? `${c.rating}/5${c.ratings ? ` from ${c.ratings} reviews` : ''}` : null],
+      ['Hours', Array.isArray(c.hours) ? c.hours.join('\n') : c.hours],
+      ['Status', c.business_status && c.business_status !== 'OPERATIONAL'
+        ? c.business_status.replace(/_/g, ' ').toLowerCase() : null]
     ].filter(([, v]) => v);
     const dl = el('dl', 'facts');
     facts.forEach(([k, v]) => {
@@ -669,6 +681,9 @@
     }
     body.append(el('div', 'tiny',
       c.source === 'curated' ? 'Researched and verified for this planner.'
+      : c.source === 'osm' && c.verified
+        ? 'Located from OpenStreetMap, confirmed against Google. OpenStreetMap places the '
+          + 'milepost; Google supplies the contact details.'
       : c.source === 'osm' ? 'From OpenStreetMap. Details may be incomplete.'
       : 'From Google, this session only.'));
 
