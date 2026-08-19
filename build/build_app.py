@@ -69,7 +69,19 @@ def main():
 
     # The header lockup is the same artwork the icons are cut from. Inlined rather than
     # linked so the page stays one self-contained file that works from a filesystem.
-    mark = read(os.path.join(ROOT, "app", "brand", "mark.svg"))
+    # The header mark follows the theme.
+    #
+    # BRAND.md ships two versions -- cream for dark grounds, blue for light -- because a
+    # cream mark on a cream background is invisible, which is exactly what happened the
+    # first time this was wired up. Rather than inline both and hide one, the BARS are
+    # switched to currentColor so they inherit --fg, which is Cream in dark and Deep Blue
+    # in light: the same two files, expressed once.
+    #
+    # The headlight stays amber deliberately. BRAND.md rule 3 forbids the circle and the
+    # bars sharing a colour -- the two-tone contrast is what makes it read as a headlight.
+    mark = read(os.path.join(ROOT, "app", "brand", "logo-mark.svg"))
+    assert '#f2efe6' in mark, "logo-mark.svg is expected to be the cream version"
+    mark = mark.replace('fill="#f2efe6"', 'fill="currentColor"')
     mark = mark.replace('<svg ', '<svg class="mark-svg" ', 1)
     html = html.replace("__MARK_SVG__", mark)
 

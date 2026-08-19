@@ -13,14 +13,16 @@
  * The API routes are never cached: a stale Google answer about whether a campground is
  * open is worse than an honest failure.
  */
-const VERSION = 'brp-v2-brand';
+const VERSION = 'brp-v3-brand';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 const TILE_LIMIT = 1200;              // ~15-25 MB, enough for a planned corridor
 
 const PRECACHE = [
-  '/', '/index.html', '/manifest.webmanifest', '/favicon.svg',
+  '/', '/index.html', '/manifest.webmanifest',
+  '/favicon.svg', '/favicon.ico',
   '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png',
+  '/icons/favicon-32.png',
 ];
 
 self.addEventListener('install', e => {

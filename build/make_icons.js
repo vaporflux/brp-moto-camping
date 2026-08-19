@@ -1,30 +1,34 @@
-/* Rasterise app/brand/mark.svg into the PNG sizes a phone home screen needs.
+/* Rasterise the brand SVGs into the PNG sizes a phone home screen and a link card need.
  *
  *   node build/make_icons.js
  *
- * Run this after editing the mark. The SVG is the source; every PNG here is derived, so
- * nothing needs redrawing by hand and the set cannot drift out of step with the artwork.
+ * The SVGs in app/brand/ are the source, produced by app/brand/gen.py. Every PNG here is
+ * derived from one of them, so nothing is redrawn by hand and the set cannot drift out of
+ * step with the artwork. Re-run this after any gen.py change.
  *
- * The maskable variant is a different image, not a resize. Android crops icons to whatever
- * shape the launcher wants -- circle, squircle, teardrop -- so a full-bleed icon loses its
- * corners. Maskable art keeps everything meaningful inside the middle 80% and lets the
- * background take the crop.
+ * Maskable variants are separate SOURCES, not resizes: gen.py draws the mark smaller
+ * inside the square so it survives Android cropping the icon to a circle, squircle or
+ * teardrop. Do not generate them by padding a normal icon.
  */
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const MARK = fs.readFileSync(path.join(ROOT, 'app/brand/mark.svg'), 'utf8');
+const BRAND = path.join(ROOT, 'app', 'brand');
 const OUT = path.join(ROOT, 'icons');
-const BG = '#1b2118';
 
+// [source svg, output png, width, height]
 const TARGETS = [
-  { file: 'icon-192.png', size: 192, inset: 0 },
-  { file: 'icon-512.png', size: 512, inset: 0 },
-  { file: 'icon-maskable-512.png', size: 512, inset: 0.20 },
-  { file: 'apple-touch-icon.png', size: 180, inset: 0.06 },
-  { file: 'favicon-32.png', size: 32, inset: 0 },
+  ['favicon.svg', 'favicon-16.png', 16, 16],
+  ['favicon.svg', 'favicon-32.png', 32, 32],
+  ['favicon.svg', 'favicon-48.png', 48, 48],
+  ['apple-touch-icon.svg', 'apple-touch-icon.png', 180, 180],
+  ['icon-192.svg', 'icon-192.png', 192, 192],
+  ['icon-512.svg', 'icon-512.png', 512, 512],
+  ['icon-192-maskable.svg', 'icon-192-maskable.png', 192, 192],
+  ['icon-512-maskable.svg', 'icon-512-maskable.png', 512, 512],
+  ['og-image.svg', 'og-image.png', 1200, 630],
 ];
 
 (async () => {
@@ -33,22 +37,21 @@ const TARGETS = [
     executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
   const page = await (await browser.newContext({ deviceScaleFactor: 1 })).newPage();
 
-  for (const t of TARGETS) {
-    const pad = Math.round(t.size * t.inset);
-    const inner = t.size - pad * 2;
-    // A maskable icon must fill its own square with the brand colour: the rounded corners
-    // in the artwork would otherwise show through as notches once the launcher crops it.
-    const art = t.inset > 0 ? MARK.replace(/rx="14"/, 'rx="0"') : MARK;
-    await page.setViewportSize({ width: t.size, height: t.size });
+  for (const [src, out, w, h] of TARGETS) {
+    const file = path.join(BRAND, src);
+    if (!fs.existsSync(file)) { console.log(`  SKIP ${out.padEnd(24)} (${src} not present)`); continue; }
+    const svg = fs.readFileSync(file, 'utf8');
+    await page.setViewportSize({ width: w, height: h });
+    // No page background: apple-touch-icon and the tiles carry their own opaque square,
+    // and anything that does not is meant to be transparent.
     await page.setContent(
-      `<body style="margin:0;width:${t.size}px;height:${t.size}px;background:${BG};` +
-      `display:flex;align-items:center;justify-content:center">` +
-      `<div style="width:${inner}px;height:${inner}px;line-height:0">${art}</div></body>`);
-    await page.screenshot({ path: path.join(OUT, t.file), omitBackground: false });
-    console.log(`  ${t.file.padEnd(24)} ${t.size}x${t.size}` +
-                (t.inset ? `  (${Math.round(t.inset * 100)}% safe-zone inset)` : ''));
+      `<body style="margin:0;width:${w}px;height:${h}px;line-height:0">${svg}</body>`);
+    await page.evaluate(([w, h]) => {
+      const s = document.querySelector('svg');
+      s.setAttribute('width', w); s.setAttribute('height', h);
+    }, [w, h]);
+    await page.screenshot({ path: path.join(OUT, out), omitBackground: true });
+    console.log(`  ${out.padEnd(24)} ${w}x${h}  from ${src}`);
   }
-  fs.writeFileSync(path.join(ROOT, 'favicon.svg'), MARK);
-  console.log('  favicon.svg              vector, from the same source');
   await browser.close();
 })();

@@ -37,5 +37,5 @@ og=(f'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox=
     f'<text x="600" y="486" text-anchor="middle" fill="{AMBER}" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" '
     f'font-size="42" font-weight="600" letter-spacing="6">MOTO CAMPING</text>'
     f'<text x="600" y="546" text-anchor="middle" fill="#9fb6c4" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" '
-    f'font-size="26">32 campgrounds with hot showers &#183; MP 0&#8211;469</text></svg>')
+    f'font-size="26">Campgrounds, fuel and closures &#183; MP 0&#8211;469</text></svg>')
 w("og-image.svg", og)

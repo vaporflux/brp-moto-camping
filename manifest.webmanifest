@@ -1,7 +1,7 @@
 {
-  "name": "Blue Ridge Trip Planner",
-  "short_name": "Blue Ridge",
-  "description": "Plan a Blue Ridge Parkway motorcycle trip: campgrounds, fuel, closures, and Garmin-safe GPX. Works with no signal.",
+  "name": "Blue Ridge Parkway Moto Camping",
+  "short_name": "BRP Camp",
+  "description": "Plan a Blue Ridge Parkway motorcycle trip: campgrounds, fuel, current closures, and Garmin-safe GPX. Works with no signal.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -27,7 +27,13 @@
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-maskable-512.png",
+      "src": "/icons/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

@@ -440,11 +440,18 @@ button, .chip, [role="tab"] { user-select: none; -webkit-user-select: none; }
   body { overscroll-behavior: none; }
 }
 
-/* ---- the brand mark ------------------------------------------------------------- */
-header { gap: 10px; align-items: center; }
-.mark { flex: 0 0 auto; line-height: 0; }
-.mark-svg { width: 34px; height: 34px; display: block; border-radius: 8px; }
-@media (max-width: 860px) { .mark-svg { width: 30px; height: 30px; } }
+/* ---- the brand mark -------------------------------------------------------------
+ * The mark is wide, not square -- handlebars with a headlight above the notch, roughly
+ * 2.3:1. It is sized by HEIGHT and left to find its own width; forcing it into a square
+ * would stretch it, which BRAND.md rules out.
+ *
+ * No radius and no background: the header already sits on Deep Blue, so the transparent
+ * cream mark is the correct version here. The blue tile is for icons, not for this.
+ */
+header { gap: 12px; align-items: center; }
+.mark { flex: 0 0 auto; line-height: 0; color: var(--fg); }
+.mark-svg { height: 26px; width: auto; display: block; }
+@media (max-width: 860px) { .mark-svg { height: 23px; } }
 
 /* Leaflet ships 30px zoom controls and its own legend header sizing. Both are under a
    thumb's worth on a phone. */
