@@ -1165,6 +1165,13 @@
                         + (rideOut ? `, ~${rideOut} mi out` : '')
                         + `. ${fuelLine}`;
     sec.append(summary);
+    // Say what the fuel plan does NOT cover. This dataset maps fuel at Parkway exits and
+    // nothing else, so the ride in and the ride home are unplanned -- and a rider who
+    // assumes otherwise runs the one risk the whole fuel model exists to remove.
+    sec.append(el('p', 'tiny',
+      'Fuel stops are worked out for the Parkway itself only. The ride to the Parkway and '
+      + 'the ride home are on ordinary roads this planner does not map, so start with a '
+      + 'full tank and find your own fuel once you are off.'));
     if (trip.severedNote) sec.append(el('div', 'alert warn', trip.severedNote));
     wrap.append(sec);
 
@@ -1234,7 +1241,7 @@
         events.push({ pos: stop.pos, order: 2, row: () => stepRow(
           `MP ${stop.mp}`,
           `Fuel — ${fuelLabel(stop)}`,
-          detail, (tight || stop.grade === 'unconfirmed') ? 'warn' : null) });
+          detail, (tight || stop.grade === 'unconfirmed') ? 'alert' : 'fuel') });
       });
     }
 
@@ -1425,13 +1432,26 @@
     return card;
   }
 
+  /* `level` colours the step's title.
+   *
+   *   ok     a place you sleep -- green, the thing the trip is for
+   *   fuel   every fuel stop -- amber, so the refuels stand out when scanning the list
+   *   alert  a fuel stop with a problem: below the arrival buffer, or unconfirmed
+   *   warn   anything else worth a second look
+   *
+   * "fuel" is unconditional. It used to inherit amber from the "cutting it fine" warning,
+   * which fired on nearly every stop back when the planner rode each tank to empty. Fixing
+   * that silenced the warning and took the colour with it -- the fuel stops went plain
+   * grey and stopped being findable at a glance.
+   */
   function stepRow(marker, title, detail, level) {
     const node = el('div', 'stop');
     node.append(el('div', 'grip', marker));
     const body = el('div', 's-body');
     const name = el('div', 's-name', title);
     if (level === 'ok') name.style.color = 'var(--ok)';
-    if (level === 'warn') name.style.color = 'var(--warn)';
+    if (level === 'warn' || level === 'fuel') name.style.color = 'var(--warn)';
+    if (level === 'alert') name.style.color = 'var(--rust)';
     body.append(name);
     if (detail) body.append(el('div', 's-meta', detail));
     node.append(body);
