@@ -764,8 +764,20 @@ const Directions = (() => {
     const k = key(a, b);
     if (cache.has(k)) return cache.get(k);
     const url = `/api/route?olat=${a[0]}&olon=${a[1]}&dlat=${b[0]}&dlon=${b[1]}`;
-    const res = await fetch(url);
-    const data = await res.json();
+    let res, data;
+    try {
+      res = await fetch(url);
+      data = await res.json();
+    } catch (e) {
+      // With no signal fetch REJECTS rather than returning a bad status, so this used to
+      // throw straight past the caching below and out of the caller as an unhandled
+      // rejection -- on an app whose whole point is working in a parking lot with no bars.
+      // Worse, nothing was cached, so every render tried again: the exact hammering the
+      // cache exists to prevent, happening only in the case it was written for.
+      const err = { ok: false, error: 'No connection — road directions need a signal.' };
+      cache.set(k, err);
+      return err;
+    }
     if (!res.ok) {
       const err = { ok: false, error: data.error || 'Routing failed.', hint: data.hint };
       cache.set(k, err);

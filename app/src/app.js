@@ -22,6 +22,12 @@
     // -- about 0.8 mi of planning range left". Ten miles is the default because nobody
     // rides to a station on less.
     arriveMinMi: 10,
+    // The Parkway's limit is 45 mph and much of it is 35, so a rider used to interstates
+    // badly underestimates how long it takes. 469 miles at 40 mph is nearly twelve hours
+    // of riding before a single overlook. Defaults are deliberately honest rather than
+    // flattering.
+    startTime: '09:00',
+    parkwayMph: 40,
     tankMi: 200,              // usable miles on a tank. NOT a GSA assumption.
     start: null,              // {lat, lon, label} — where the rider actually begins
     accessMp: null,           // chosen Parkway entry; null = let the planner pick
@@ -70,6 +76,7 @@
         name: state.name, stops: state.stops, arriveMinMi: state.arriveMinMi,
         maxFuelDetourMi: state.maxFuelDetourMi, checklist: state.checklist,
         device: state.device, tankMi: state.tankMi,
+        startTime: state.startTime, parkwayMph: state.parkwayMph,
         start: state.start, accessMp: state.accessMp,
         finish: state.finish, endPoint: state.endPoint,
         stayWithinMi: state.stayWithinMi,
@@ -1001,6 +1008,51 @@
     return pts.filter((_, i) => i % stride === 0).map(mp => BRP.coordAtMp(mp));
   }
 
+  /* ---- the clock ----------------------------------------------------------------
+   *
+   * Distance is the number this planner has always given, and on the Parkway it is the
+   * misleading one. The limit is 45 mph and long stretches are 35; a rider whose instinct
+   * is calibrated on interstates reads "469 miles" as a long day and it is closer to two.
+   * Turning miles into a time of day is what makes that visible before the trip rather
+   * than at dusk.
+   *
+   * Everything here is a stated assumption rather than a claim: a constant Parkway speed
+   * the rider sets, 50 mph off it, and ten minutes standing at a pump. Overlooks, lunch
+   * and photographs are the rider's to add, which the note under the inputs says plainly.
+   * A clock that quietly padded itself would be worse than none -- it would be wrong in a
+   * direction nobody could see.
+   */
+  const OFF_PARKWAY_MPH = 50;   // secondary roads to a campsite or a pump
+  const FUEL_STOP_MIN = 10;     // off the bike, tank filled, back on
+
+  function hoursFor(parkwayMi, offParkwayMi = 0) {
+    const mph = Math.max(5, state.parkwayMph || 40);
+    return parkwayMi / mph + offParkwayMi / OFF_PARKWAY_MPH;
+  }
+
+  /* Minutes since midnight on the day the rider sets off. Overnights push the clock to the
+   * next morning's start time rather than letting it run through the night. */
+  function startMinutes() {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(state.startTime || '09:00');
+    return m ? (+m[1]) * 60 + (+m[2]) : 9 * 60;
+  }
+
+  function clockLabel(minutes) {
+    const day = Math.floor(minutes / 1440);
+    let mins = ((minutes % 1440) + 1440) % 1440;
+    const h24 = Math.floor(mins / 60), mm = String(Math.round(mins % 60)).padStart(2, '0');
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    const ampm = h24 < 12 ? 'am' : 'pm';
+    return `${h12}:${mm}${ampm}` + (day > 0 ? ` (day ${day + 1})` : '');
+  }
+
+  function durationLabel(hours) {
+    const total = Math.round(hours * 60);
+    if (total < 1) return null;
+    const h = Math.floor(total / 60), m = total % 60;
+    return h ? `${h} hr${m ? ` ${m} min` : ''}` : `${m} min`;
+  }
+
   /* ---- input 3: how you ride ---------------------------------------------------- */
   function fieldLimits() {
     const sec = el('div', 'section');
@@ -1030,6 +1082,28 @@
     rowB.append(mk('maxFuelDetourMi', 'Furthest you will ride off the Parkway for fuel',
                    1, 30));
     sec.append(rowB);
+
+    const rowC = el('div', 'field-row');
+    const when = el('label', 'field');
+    when.append(el('span', null, 'Setting off at'));
+    const t = el('input');
+    t.type = 'time';
+    t.value = state.startTime;
+    t.setAttribute('aria-label', 'Setting off at');
+    t.onchange = e => {
+      if (/^\d{2}:\d{2}$/.test(e.target.value)) { state.startTime = e.target.value; render(); }
+      else { e.target.value = state.startTime; }
+    };
+    when.append(t);
+    rowC.append(when);
+    rowC.append(mk('parkwayMph', 'Average speed on the Parkway', 15, 45, 'mph'));
+    sec.append(rowC);
+    sec.append(el('p', 'tiny',
+      'The Parkway is signed at 45 mph and a lot of it is 35, so the clock matters more '
+      + 'here than the mileage does: 469 miles at 40 mph is nearly twelve hours in the '
+      + 'saddle before you stop to look at anything. Times below assume you keep moving, '
+      + 'plus ten minutes at each fuel stop — overlooks, lunch and photographs are yours '
+      + 'to add. Off-Parkway riding is estimated at 50 mph.'));
     sec.append(el('p', 'tiny',
       'The planner rides each tank as far as it goes, so without a buffer it will happily '
       + 'route you into a station on under a mile of range. Whatever you set here is still '
@@ -1183,9 +1257,18 @@
       fuelLine = `No fuel stop needed — you arrive with about ${f.arriveWithMi} mi to spare.`;
     }
     const rideOut = trip.exitPoint ? trip.exitPoint.rideOutMi : 0;
+    // Riding time, not elapsed time: overnights and lunch are the rider's own. At 40 mph a
+    // 469 mile Parkway run is close to twelve hours, which is the fact the mileage hides
+    // and the reason this line exists at all.
+    const ridingHours = hoursFor(trip.parkwayMi || 0,
+                                 (c.approachMi || 0) + rideOut
+                                 + (f.ok ? f.stops.reduce((a, x) => a + (x.detourMi || 0) * 2, 0) : 0));
+    const pumpMin = f.ok ? f.stops.length * FUEL_STOP_MIN : 0;
+    const timeLine = `About ${durationLabel(ridingHours + pumpMin / 60)} moving at `
+                   + `${state.parkwayMph} mph, before you stop to look at anything.`;
     summary.textContent = `~${c.approachMi} mi in, ${trip.parkwayMi} mi on the Parkway`
                         + (rideOut ? `, ~${rideOut} mi out` : '')
-                        + `. ${fuelLine}`;
+                        + `. ${timeLine} ${fuelLine}`;
     sec.append(summary);
     // Say what the fuel plan does NOT cover. This dataset maps fuel at Parkway exits and
     // nothing else, so the ride in and the ride home are unplanned -- and a rider who
@@ -1211,8 +1294,16 @@
      * where it happens.
      */
     const steps = el('div', 'day');
+    /* Read back by each row's closure AFTER the clock walk below has filled the event in.
+     * The rows are built before the walk -- they have to be, the walk needs them sorted --
+     * so they close over the event object rather than over a value. */
+    const timeSuffix = ev => {
+      const leg = durationLabel(ev.legHours || 0);
+      return ` \u00b7 ${leg ? `${leg} riding \u00b7 ` : ''}arrive about ${clockLabel(ev.atMin)}`;
+    };
     steps.append(stepRow('HOME', state.start.label,
-                         `Ride ~${c.approachMi} mi to the Parkway`));
+                         `Ride ~${c.approachMi} mi to the Parkway`
+                         + ` \u00b7 leave about ${clockLabel(startMinutes())}`));
 
     const wpos = (f.ok && f.waypointPos) ? f.waypointPos : null;
     // Tank state at each waypoint comes from the journey simulation, so the figure shown
@@ -1225,21 +1316,29 @@
     // this stop on the Parkway at all. Say which entrance, and how much it would have
     // saved, so the rider can weigh moving the stop instead of just distrusting the plan.
     const sev = c.severedAlternative;
-    events.push({ pos: wpos ? wpos[0] : 0, order: 0, row: () => stepRow(
+    const onParkway = { pos: wpos ? wpos[0] : 0, order: 0, offMi: c.approachMi || 0 };
+    onParkway.row = () => stepRow(
       `MP ${c.mp}`, `Get on the Parkway — ${c.name}`,
-      sev ? `Closest entry that can actually reach your stop. MP ${sev.mp} (${sev.name}) `
-          + `is ${sev.savedMi} mi nearer to you, but the Parkway is severed between there `
-          + `and here, so it cannot get you to this stop.`
-          : 'Closest entry from where you are starting') });
+      (sev ? `Closest entry that can actually reach your stop. MP ${sev.mp} (${sev.name}) `
+           + `is ${sev.savedMi} mi nearer to you, but the Parkway is severed between there `
+           + `and here, so it cannot get you to this stop.`
+           : 'Closest entry from where you are starting') + timeSuffix(onParkway));
+    events.push(onParkway);
 
     state.stops.forEach((st, i) => {
       const t = tankAt[i + 1];
       const last = i === state.stops.length - 1;
-      events.push({ pos: wpos ? wpos[i + 1] : i + 1, order: 1, row: () => stepRow(
+      const ev = { pos: wpos ? wpos[i + 1] : i + 1, order: 1,
+                   offMi: st.off_parkway_mi || 0,
+                   // Only a day break the rider actually set stops the clock. A stop they
+                   // ride straight through is a waypoint, not a night.
+                   overnight: !!st.dayBreakAfter };
+      ev.row = () => stepRow(
         `MP ${st.mp.toFixed(1)}`, st.name,
         [last && !trip.exitPoint ? 'Arrive' : (last ? 'Camp here' : `Overnight ${i + 1}`),
          t != null ? `about ${t} mi of fuel in the tank` : null]
-        .filter(Boolean).join(' \u00b7 '), 'ok') });
+        .filter(Boolean).join(' \u00b7 ') + timeSuffix(ev), 'ok');
+      events.push(ev);
     });
 
     if (f.ok) {
@@ -1265,29 +1364,63 @@
             : tight ? `cutting it fine — you arrive with about ${stop.arriveTankMi} mi in the tank`
                     : `about ${stop.arriveTankMi} mi in the tank on arrival`
         ].filter(Boolean).join(' \u00b7 ');
-        events.push({ pos: stop.pos, order: 2, row: () => stepRow(
+        // A detour is ridden twice, and the rider is off the bike at the pump.
+        const ev = { pos: stop.pos, order: 2, offMi: (stop.detourMi || 0) * 2,
+                     dwellMin: FUEL_STOP_MIN };
+        ev.row = () => stepRow(
           `MP ${stop.mp}`,
           stop.topOff ? `Top off — ${fuelLabel(stop)}` : `Fuel — ${fuelLabel(stop)}`,
-          detail, (tight || stop.grade === 'unconfirmed') ? 'alert' : 'fuel') });
+          detail + timeSuffix(ev),
+          (tight || stop.grade === 'unconfirmed') ? 'alert' : 'fuel');
+        events.push(ev);
       });
     }
 
     if (trip.exitPoint) {
       const t = tankAt[tankAt.length - 1];
-      events.push({ pos: wpos ? wpos[wpos.length - 1] : 1e9, order: 3, row: () => stepRow(
+      const ev = { pos: wpos ? wpos[wpos.length - 1] : 1e9, order: 3 };
+      ev.row = () => stepRow(
         `MP ${trip.exitPoint.mp}`, `Leave the Parkway — ${trip.exitPoint.name}`,
         [`${trip.exitPoint.parkwayMi} mi of Parkway from camp`,
-         t != null ? `about ${t} mi of fuel left` : null].filter(Boolean).join(' \u00b7 ')) });
+         t != null ? `about ${t} mi of fuel left` : null].filter(Boolean).join(' \u00b7 ')
+        + timeSuffix(ev));
+      events.push(ev);
     }
 
     // `order` breaks ties at the same position: a fuel stop sitting exactly on an
     // overnight's milepost is reached after arriving, and leaving the Parkway is last.
     events.sort((a, b) => (a.pos - b.pos) || (a.order - b.order));
+
+    /* Walk the sorted events once and put a clock on each.
+     *
+     * Parkway miles between events come from the journey line, which already accounts for
+     * a round trip passing the same milepost twice. Off-Parkway miles are declared by the
+     * event itself -- the ride in, a detour to a pump and back, the hop out to a campsite.
+     * An overnight stops the clock and restarts it at the next morning's start time, so a
+     * three-day trip does not report arriving at four in the morning.
+     */
+    let clock = startMinutes(), lastPos = 0;
+    events.forEach(ev => {
+      const legHours = hoursFor(Math.max(0, ev.pos - lastPos), ev.offMi || 0);
+      ev.legHours = legHours;
+      clock += legHours * 60;
+      ev.atMin = clock;
+      clock += ev.dwellMin || 0;
+      if (ev.overnight) {
+        // Next morning, at the hour the rider said they set off.
+        clock = (Math.floor(clock / 1440) + 1) * 1440 + startMinutes();
+      }
+      lastPos = ev.pos;
+    });
     events.forEach(e => steps.append(e.row()));
 
     if (trip.exitPoint) {
+      const outHours = hoursFor(0, trip.exitPoint.rideOutMi || 0);
+      const finishMin = (events.length ? events[events.length - 1].atMin : startMinutes())
+                      + outHours * 60;
       steps.append(stepRow('FINISH', trip.endLabel,
-        `Ride ~${trip.exitPoint.rideOutMi} mi from the Parkway to here`, 'ok'));
+        `Ride ~${trip.exitPoint.rideOutMi} mi from the Parkway to here`
+        + ` \u00b7 arrive about ${clockLabel(finishMin)}`, 'ok'));
     }
     wrap.append(steps);
 
@@ -2515,6 +2648,10 @@
     renderActiveTab();
     try {
       for (const leg of missing) await Directions.fetchLeg(leg.from, leg.to);
+    } catch (e) {
+      // fetchLeg handles its own failures; this is the belt to that braces, so a surprise
+      // here degrades to "no road directions" rather than an unhandled rejection.
+      state.roadStatus = null;
     } finally {
       roadsInFlight = false;
       state.roadStatus = null;
