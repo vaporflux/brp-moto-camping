@@ -67,13 +67,19 @@ def main():
         html = html.replace(token, read(path))
     html = html.replace("__DATA__", data)
 
+    # The header lockup is the same artwork the icons are cut from. Inlined rather than
+    # linked so the page stays one self-contained file that works from a filesystem.
+    mark = read(os.path.join(ROOT, "app", "brand", "mark.svg"))
+    mark = mark.replace('<svg ', '<svg class="mark-svg" ', 1)
+    html = html.replace("__MARK_SVG__", mark)
+
     with open(OUT, "w", encoding="utf-8", newline="\n") as f:
         f.write(html)
 
     size = os.path.getsize(OUT)
     print(f"index.html (deployed)  {size/1024:.0f} KB")
     for token in ("__LEAFLET_CSS__", "__APP_CSS__", "__LEAFLET_JS__", "__DATA__",
-                  "__CORE_JS__", "__ROUTE_JS__", "__GPX_JS__", "__APP_JS__"):
+                  "__CORE_JS__", "__ROUTE_JS__", "__GPX_JS__", "__APP_JS__", "__MARK_SVG__"):
         assert token not in html, f"unsubstituted token {token}"
     assert html.count("<html") == 1
     print("  all tokens substituted")

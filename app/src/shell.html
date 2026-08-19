@@ -6,6 +6,15 @@
 <meta name="color-scheme" content="dark light">
 <meta name="description" content="Blue Ridge Parkway motorcycle trip planner — campgrounds, fuel, closures, and Garmin-safe GPX export. Works offline.">
 <title>Blue Ridge Parkway — Trip Planner</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#1b2118">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Blue Ridge">
+<meta name="mobile-web-app-capable" content="yes">
 <style>__LEAFLET_CSS__</style>
 <style>__APP_CSS__</style>
 </head>
@@ -13,7 +22,8 @@
 <div id="app">
   <div id="side">
     <header>
-      <div style="flex:1">
+      <span class="mark" aria-hidden="true">__MARK_SVG__</span>
+      <div style="flex:1;min-width:0">
         <h1>Blue Ridge <span>Trip Planner</span></h1>
         <div class="asof" id="asof"></div>
       </div>
@@ -29,7 +39,7 @@
     <div class="pane" id="pane-export" role="tabpanel" hidden></div>
     <div class="pane" id="pane-notes" role="tabpanel" hidden></div>
   </div>
-  <div id="map"></div>
+  <div id="map"><button id="maptoggle" type="button" aria-label="Show the full map"></button></div>
 </div>
 <input type="file" id="importer" accept="application/json,.json" hidden>
 <script>__LEAFLET_JS__</script>
@@ -38,5 +48,14 @@
 <script>__ROUTE_JS__</script>
 <script>__GPX_JS__</script>
 <script>__APP_JS__</script>
+<script>
+/* Registered from the page rather than bundled, so opening index.html straight off the
+   filesystem -- which is how the tests drive it -- does not throw. */
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+</script>
 </body>
 </html>

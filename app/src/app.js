@@ -41,8 +41,12 @@
     browseWithinMi: 15,
     browseGoogle: null,
     browseNote: null,
-    legendOpen: true,          // a map of unexplained dots is worse than a busy corner
+    // Open on a desktop, where there is room beside the map; collapsed on a phone, where
+    // an open key covers the whole 42vh map pane and hides the thing it is explaining.
+    // Either way the rider's own choice is remembered from then on.
+    legendOpen: typeof window !== 'undefined' && window.innerWidth > 860,
     pinMode: false,            // map taps only place a pin when the rider asks for it
+    mapView: 'split',          // phone only: split | map | list
     checklist: {},
     device: 'xt2'
   };
@@ -1630,6 +1634,13 @@
     pane.textContent = '';
     const acc = D.milepost_accuracy;
     const sections = [
+      ['Riding with no signal', 'Add this to your home screen and it installs as an app: '
+        + 'the whole planner, every campground, every fuel exit and the Parkway itself are '
+        + 'already on the phone, so it opens and plans with the radio off. Two things are '
+        + 'not. Map TILES are cached only as you look at them, so pan along your route at '
+        + 'home and that corridor stays visible in a dead zone \u2014 anywhere you have not '
+        + 'looked shows empty squares over a working map. And anything that asks Google, or '
+        + 'looks up an address, needs signal by definition; the plan itself does not.'],
       ['Closures', `From the NPS road-closure page, as of ${D.as_of}. These change — re-check `
         + `before you ride. The Parkway is in ${Object.keys(D.components).length} disconnected `
         + `pieces this year; the planner refuses to route between them rather than quietly `
@@ -1711,6 +1722,39 @@
     });
     refreshLegend();
     drawMarkers();
+    initMapToggle();
+  }
+
+  /* Give the phone its whole screen for whichever half is being used.
+   *
+   * Split gives the map 42vh and the list what is left, which is the right default and the
+   * wrong answer for both jobs when you are actually doing one of them: reading a list of
+   * 478 places through a 400px window, or looking at where a campsite sits on a 350px map.
+   *
+   * Desktop never sees this -- there is room for both there, and the button is display:none.
+   */
+  function initMapToggle() {
+    const btn = $('#maptoggle');
+    if (!btn || btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    btn.onclick = () => {
+      state.mapView = state.mapView === 'map' ? 'list' : 'map';
+      applyMapView();
+    };
+    applyMapView();
+  }
+
+  function applyMapView() {
+    const app = $('#app'), btn = $('#maptoggle');
+    if (!app || !btn) return;
+    app.classList.toggle('map-full', state.mapView === 'map');
+    app.classList.toggle('list-full', state.mapView === 'list');
+    const next = state.mapView === 'map' ? 'Show the list' : 'Show the full map';
+    btn.textContent = next;
+    btn.setAttribute('aria-label', next);
+    // Leaflet caches the container size, so a pane that changed height behind its back
+    // renders grey tiles and puts clicks in the wrong place until it is told.
+    if (map) setTimeout(() => map.invalidateSize({ animate: false }), 60);
   }
 
   /* The map's whole vocabulary, in one place.
