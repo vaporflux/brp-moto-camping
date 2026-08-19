@@ -27,6 +27,10 @@ const CATEGORY = {
   moto:  { fill: "#e8833a", label: "Motorcycle camp", note: "two wheels" },
   hotel: { fill: "#5aa9e6", label: "Hotel or motel",  note: "a bed" },
   fuel:  { fill: "#35d07f", label: "Fuel",            note: "a pump" },
+  // Purple, because it is the one hue that stays separate from the other four under both
+  // red-green deficiencies -- and with roughly 8% of men carrying one, a group riding
+  // together is likely to include somebody who cannot split green from orange.
+  food:  { fill: "#a879e6", label: "Food",            note: "knife and fork" },
 };
 const UNVERIFIED = "#93a8b4";   // slate: listed, not visited
 export const ME = "#e86ec4";     // you: the same magenta as the planned route
@@ -47,6 +51,10 @@ const GLYPH = {
       + `<path d="M13.2 10.2 H17.6"/>`,
   hotel:`<path d="M3 18.6 V8.4"/><path d="M3 13.4 H14.6 a4.2 4.2 0 0 1 4.2 4.2 V18.6"/>`
       + `<path d="M21 18.6 V15.2"/><circle cx="7.4" cy="10.8" r="1.9"/>`,
+  food: `<path d="M6.6 3.6 V10.2 a2.6 2.6 0 0 0 5.2 0 V3.6"/><path d="M9.2 3.6 V9.4"/>`
+      + `<path d="M9.2 12.8 V20.4"/>`
+      + `<path d="M17.4 3.6 c-2.1 1.4-3 3.5-3 6.2 0 1.9 1 3 3 3.2"/>`
+      + `<path d="M17.4 3.6 V20.4"/>`,
   fuel: `<path d="M4.2 20.4 V5.4 a1.8 1.8 0 0 1 1.8-1.8 H12 a1.8 1.8 0 0 1 1.8 1.8 V20.4"/>`
       + `<path d="M2.8 20.4 H15.2"/><path d="M6.6 7.2 H11.4 V10.6 H6.6 Z"/>`
       + `<path d="M13.8 9.6 H17.4 a1.6 1.6 0 0 1 1.6 1.6 V16.6 a1.5 1.5 0 0 0 3 0 V10.4 L19.4 7.8"/>`,
@@ -133,7 +141,7 @@ export const LINE = {
  * The four category rows are switches: legendHtml() is given the set
  * that is currently shown, and marks the rest off.
  * ------------------------------------------------------------------ */
-export const SHAPES = ["camp", "moto", "hotel", "fuel"];
+export const SHAPES = ["camp", "moto", "hotel", "food", "fuel"];
 
 const TRUST_ROWS = [
   { pin: ["camp"],                    label: "Solid ring — researched",

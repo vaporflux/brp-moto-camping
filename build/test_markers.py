@@ -90,7 +90,7 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
 
   // Every state the key teaches, reduced to what survives a greyscale print.
   const grey = await p.evaluate(() => {
-    const rows = [['camp', {}], ['moto', {}], ['hotel', {}], ['fuel', {}],
+    const rows = [['camp', {}], ['moto', {}], ['hotel', {}], ['food', {}], ['fuel', {}],
                   ['hotel', { trust: 'listed' }], ['fuel', { trust: 'listed' }],
                   ['camp', { top: true }]];
     const sig = s => {
@@ -395,12 +395,11 @@ def main():
           key["heads"] == ["SHOW ON THE MAP", "HOW MUCH TO TRUST IT", "LINES"],
           str(key["heads"]))
     check("every key row draws a real swatch, none are hand-written",
-          key["rows"] == key["swatches"] and key["rows"] >= 13,
+          key["rows"] == key["swatches"] and key["rows"] >= 14,
           f"{key['rows']} rows, {key['swatches']} swatches")
     check("the footer says the rows can be tapped", "Tap a row" in key["footer"],
           key["footer"][:60])
-    check("exactly the four categories are switches", key["switches"] == 4,
-          str(key["switches"]))
+    check("every category is a switch", key["switches"] == 5, str(key["switches"]))
 
     print("\nthe encoding survives being desaturated")
     check("no two key states collapse into each other in greyscale",

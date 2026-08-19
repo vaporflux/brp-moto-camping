@@ -183,6 +183,9 @@ def build(model, net, curated, osm=None, enrichment=None):
             # stands unchanged. Enrichment fills contact details, not amenities.
             "showers": p.get("showers"),
             "toilets": p.get("toilets"),
+            # What kind of food, where OSM says so. "Somewhere to eat" is a weaker answer
+            # than "barbecue", and the finder searches this.
+            "cuisine": p.get("cuisine"),
             "source": "osm",
             # Google's value where OSM is blank, OSM's where Google is.
             "phone": (g or {}).get("phone") or p.get("phone"),

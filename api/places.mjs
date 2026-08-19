@@ -40,7 +40,17 @@ const TYPE_GROUPS = {
             'extended_stay_hotel', 'guest_house', 'hostel', 'cottage'],
   campground: ['campground', 'rv_park', 'camping_cabin'],
   rv_park: ['rv_park', 'campground'],
-  gas_station: ['gas_station']
+  gas_station: ['gas_station'],
+  // Food, deliberately broad but not unbounded. A rider wants somewhere to eat, and on
+  // this road that is as likely to be a barbecue shack or a general store counter as a
+  // restaurant -- so fast food and diners are in. Bars, bakeries and coffee shops are not:
+  // they are places to stop, not places to get a meal, and including them buries the
+  // handful of real options in a list nobody can read.
+  restaurant: ['restaurant', 'american_restaurant', 'barbecue_restaurant',
+               'breakfast_restaurant', 'brunch_restaurant', 'diner', 'fast_food_restaurant',
+               'hamburger_restaurant', 'italian_restaurant', 'mexican_restaurant',
+               'pizza_restaurant', 'sandwich_shop', 'seafood_restaurant',
+               'steak_house', 'family_restaurant']
 };
 const ALLOWED_TYPES = new Set(Object.keys(TYPE_GROUPS));
 const MAX_RADIUS_M = 40000;      // ~25 mi, the same corridor the OSM pull uses

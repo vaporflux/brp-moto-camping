@@ -45,7 +45,7 @@
     filters: { motoOnly: false, topOnly: false },
     // Which shapes are drawn. Toggled from the map key, and remembered -- a rider looking
     // for somewhere to sleep does not want 283 fuel pins in the way, and vice versa.
-    mapShow: { camp: true, moto: true, hotel: true, fuel: true },
+    mapShow: { camp: true, moto: true, hotel: true, food: true, fuel: true },
     // Live GPS. Remembered, but never auto-started unless the browser already holds the
     // permission -- a location prompt on page load, before the rider has asked for
     // anything, is how an app gets its location permission denied for good.
@@ -531,7 +531,8 @@
 
   const finderKinds = f => [
     ['all', 'Anywhere'], ['campground', 'Campgrounds'], ['koa', 'KOA'],
-    ['hotel', 'Hotels & motels'], ...(f.fuel ? [['fuel', 'Fuel']] : [])
+    ['hotel', 'Hotels & motels'], ['food', 'Food'],
+    ...(f.fuel ? [['fuel', 'Fuel']] : [])
   ];
 
   /* Everything the finder can show, already deduped and in milepost order. */
@@ -560,13 +561,18 @@
                 || (kind === 'koa' ? /\bkoa\b/i.test(c.name) : c.kind === kind))
       // Google knows nothing about showers, so these stay strict: only places actually
       // recorded as having one. Untagged is unknown, and unknown is not "no".
-      .filter(c => kind === 'fuel' || !state[f.showers] || c.showers === true)
-      .filter(c => kind === 'fuel' || !state[f.toilets] || c.toilets === true)
+      // Showers and toilets are a campsite question. Applied to somewhere you eat they
+      // would silently empty the list, because nobody tags a diner with either.
+      .filter(c => kind === 'fuel' || kind === 'food' || !state[f.showers]
+                || c.showers === true)
+      .filter(c => kind === 'fuel' || kind === 'food' || !state[f.toilets]
+                || c.toilets === true)
       .filter(c => (c.off_parkway_mi ?? 0) <= state[f.within])
       .filter(c => !q || c.name.toLowerCase().includes(q)
                       || String(c.mp).includes(q)
                       || (c.address || '').toLowerCase().includes(q)
                       || (c.food || '').toLowerCase().includes(q)
+                      || (c.cuisine || '').toLowerCase().includes(q)
                       || (c.access || '').toLowerCase().includes(q));
   }
 
@@ -725,8 +731,17 @@
       count.textContent = `${rows.length} of ${total} places`
         + (D.has_osm ? '' : ' \u00b7 curated list only, run build/fetch_osm.py to widen it');
       if (!rows.length) {
-        list.append(el('div', 'empty', 'Nothing matches. Loosen a filter, or widen the '
-                                     + 'distance.'));
+        // "Nothing matches" is the wrong answer when the reason is that nothing was ever
+        // fetched. Food only entered the OSM pull recently, so a dataset built before that
+        // has no restaurants in it at all, and a rider would read an empty list as "there
+        // is nowhere to eat on the Blue Ridge Parkway".
+        const noFoodYet = state[f.kind] === 'food'
+                       && !(D.places || []).some(c => c.kind === 'food');
+        list.append(el('div', 'empty', noFoodYet
+          ? 'No food in the offline list yet — this dataset was built before restaurants '
+          + 'were added to the map pull. Use the Google search below to find somewhere to '
+          + 'eat, or re-run build/fetch_osm.py to bake them in.'
+          : 'Nothing matches. Loosen a filter, or widen the distance.'));
         return;
       }
       rows.slice(0, 300).forEach(c => list.append(finderRow(c)));
@@ -899,6 +914,7 @@
     const samples = parkwaySamples(withinMi);
     const kind = state[f.kind];
     const what = kind === 'fuel' ? 'gas stations'
+               : kind === 'food' ? 'food'
                : kind === 'hotel' ? 'hotels & motels'
                : kind === 'koa' ? 'KOA campgrounds'
                : kind === 'campground' ? 'campgrounds' : 'places to stay';
@@ -923,6 +939,7 @@
     btn.onclick = async () => {
       btn.disabled = true;
       const type = kind === 'fuel' ? 'gas_station'
+                 : kind === 'food' ? 'restaurant'
                  : (kind === 'campground' || kind === 'koa') ? 'campground' : 'lodging';
       const radiusM = Math.round(withinMi * 1609);
       const found = new Map();
@@ -947,7 +964,8 @@
             if (found.has(g.id)) return;      // circles overlap; the same hotel recurs
             const n = BRP.nearestVertex(g.lat, g.lon);
             found.set(g.id, { ...g, id: `google-${g.id}`, google_id: g.id,
-                              kind: type === 'campground' ? 'campground' : 'hotel',
+                              kind: type === 'campground' ? 'campground'
+                                  : type === 'restaurant' ? 'food' : 'hotel',
                               mp: n.mp, off_parkway_mi: Math.round(n.distance * 100) / 100,
                               showers: null, toilets: null });
           });
@@ -1679,8 +1697,17 @@
       count.textContent = `${rows.length} of ${pool} `
         + (state[f.kind] === 'fuel' ? 'fuel exits' : 'places');
       if (!rows.length) {
-        list.append(el('div', 'empty',
-          'Nothing matches. Loosen a filter, or widen the distance.'));
+        // "Nothing matches" is the wrong answer when the reason is that nothing was ever
+        // fetched. Food only entered the OSM pull recently, so a dataset built before that
+        // has no restaurants in it at all, and a rider would read an empty list as "there
+        // is nowhere to eat on the Blue Ridge Parkway".
+        const noFoodYet = state[f.kind] === 'food'
+                       && !(D.places || []).some(c => c.kind === 'food');
+        list.append(el('div', 'empty', noFoodYet
+          ? 'No food in the offline list yet — this dataset was built before restaurants '
+          + 'were added to the map pull. Use the Google search below to find somewhere to '
+          + 'eat, or re-run build/fetch_osm.py to bake them in.'
+          : 'Nothing matches. Loosen a filter, or widen the distance.'));
         return;
       }
       rows.slice(0, 300).forEach(c => list.append(finderRow(c)));
@@ -2184,7 +2211,9 @@
    * out of pinSvg(), so the key cannot describe a marker the map does not draw.
    */
 
-  const placeKind = c => c.kind === 'hotel' ? 'hotel' : c.moto ? 'moto' : 'camp';
+  const placeKind = c => c.kind === 'hotel' ? 'hotel'
+                       : c.kind === 'food' ? 'food'
+                       : c.moto ? 'moto' : 'camp';
 
   /* Cream is the claim that a human checked this place for this planner. That is exactly
    * what `source: 'curated'` means -- 32 places out of 478 -- and it used to be encoded as
@@ -2312,6 +2341,7 @@
       const label = [c.name,
                      c.mp != null ? `MP ${c.mp.toFixed(1)}` : null,
                      c.kind === 'hotel' ? 'hotel or motel'
+                       : c.kind === 'food' ? 'somewhere to eat'
                        : c.moto ? 'motorcycle camp' : 'campground',
                      c.off_parkway_mi != null && c.off_parkway_mi >= 0.3
                        ? `${c.off_parkway_mi} mi off the Parkway` : 'on the Parkway']

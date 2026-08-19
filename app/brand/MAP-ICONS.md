@@ -189,6 +189,7 @@ out to be genuinely harder to scan than one where campgrounds are green and hote
 | Campground | `#2e7d4f` dark green |
 | Motorcycle camp | `#e8833a` orange |
 | Hotel or motel | `#5aa9e6` blue |
+| Food | `#a879e6` purple — the one hue that stays separate from the other four under both red-green deficiencies |
 | Fuel, researched | `#35d07f` bright green |
 | Fuel, listed only | `#93a8b4` slate |
 

@@ -52,11 +52,18 @@ ENDPOINTS = [
 # Knoxville and Charlotte as well, but that costs nothing here: main() measures each result
 # against the real centerline and drops whatever falls outside --radius. The precision comes
 # from that check, so it does not have to come from Overpass.
+# Food is deliberately amenity=restaurant|fast_food only. A rider asking "where can I eat"
+# wants a meal, and on this road that is as likely to be a barbecue shack as a restaurant,
+# so fast_food is in. cafe, bar, pub and ice_cream are not: they are places to stop rather
+# than places to eat, they outnumber the real options several times over along a tourist
+# road, and including them buries the handful of answers in a list nobody can read.
 QUERY = """
 [out:json][timeout:{timeout}];
 (
   node({s},{w},{n},{e})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
   way({s},{w},{n},{e})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
+  node({s},{w},{n},{e})["amenity"~"^(restaurant|fast_food)$"]["name"];
+  way({s},{w},{n},{e})["amenity"~"^(restaurant|fast_food)$"]["name"];
 );
 out center tags;
 """
@@ -67,6 +74,9 @@ KIND = {
     "hotel": "hotel",
     "motel": "hotel",
     "hostel": "hotel",
+    # amenity=, not tourism=
+    "restaurant": "food",
+    "fast_food": "food",
 }
 
 
@@ -182,8 +192,12 @@ def main():
         places.append({
             "osm_id": f"{e['type'][0]}{e['id']}",
             "name": name,
-            "kind": KIND.get(tags.get("tourism"), "other"),
+            "kind": KIND.get(tags.get("tourism") or tags.get("amenity"), "other"),
             "osm_tourism": tags.get("tourism"),
+            "osm_amenity": tags.get("amenity"),
+            # What kind of food, when OSM says. "Somewhere to eat" is a weaker answer than
+            # "barbecue", and the finder already searches this field.
+            "cuisine": tags.get("cuisine"),
             "lat": round(lat, 6), "lon": round(lon, 6),
             "mp": round(model.mp_at_index(i), 2),
             "off_parkway_mi": round(off, 2),
