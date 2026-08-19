@@ -851,7 +851,7 @@
     layers.preview.clearLayers();
     // The full card goes in the popup as a live DOM node, so its buttons work and the
     // rider decides while looking at the location rather than at a sidebar.
-    L.marker([c.lat, c.lon], { icon: dot('#e0a33e', 20) })
+    L.marker([c.lat, c.lon], { icon: dot(C('--amber', '#f0b44a'), 20) })
       .bindPopup(previewCard(c), {
         className: 'place-popup', maxWidth: 330, minWidth: 260,
         autoPan: true, autoPanPadding: [16, 16], keepInView: true, closeButton: true
@@ -862,7 +862,7 @@
     if (c.mp != null && (c.off_parkway_mi || 0) >= 0.3) {
       const [plat, plon] = BRP.coordAtMp(c.mp);
       L.polyline([[plat, plon], [c.lat, c.lon]],
-                 { color: '#e0a33e', weight: 2, dashArray: '3 5', opacity: .9 })
+                 { color: C('--amber', '#f0b44a'), weight: 2, dashArray: '3 5', opacity: .9 })
         .addTo(layers.preview);
     }
   }
@@ -1696,7 +1696,7 @@
     layers.parkway = L.layerGroup().addTo(map);
     D.segment_geometry.forEach((geom, i) => {
       const seg = D.segments[i];
-      L.polyline(geom, { color: '#5b93b8', weight: 4, opacity: .9 })
+      L.polyline(geom, { color: C('--sky', '#7fd3f5'), weight: 4, opacity: .9 })
         .bindPopup(`<h3>Parkway open</h3>MP ${seg.from_mp}–${seg.to_mp} · ${seg.length_mi} mi`)
         .addTo(layers.parkway);
     });
@@ -1705,7 +1705,7 @@
       const a = BRP.coordAtMp(c.from_mp), b = BRP.coordAtMp(c.to_mp);
       const i0 = BRP.indexAtMp(c.from_mp), i1 = BRP.indexAtMp(c.to_mp);
       const geom = [a, ...D.parkway.slice(i0, i1 + 1), b];
-      L.polyline(geom, { color: '#c8552f', weight: 4, opacity: .95, dashArray: '7 6' })
+      L.polyline(geom, { color: C('--rust', '#e0623a'), weight: 4, opacity: .95, dashArray: '7 6' })
         .bindPopup(`<h3>Closed · MP ${c.from_mp}–${c.to_mp}</h3>${c.reason}` +
                    (c.detour ? `<br><br>Detour: ${c.detour}` : '<br><br>No detour — this severs the Parkway.'))
         .addTo(layers.closed);
@@ -1764,46 +1764,60 @@
     if (map) setTimeout(() => map.invalidateSize({ animate: false }), 60);
   }
 
+  /* The palette lives in CSS and nowhere else.
+   *
+   * Leaflet takes colours as strings, so the map used to carry its own copy of every hex.
+   * Two copies of a palette is one palette and one thing that is quietly wrong after a
+   * rebrand -- so these read the CSS custom properties instead. Re-read on every draw, so
+   * a system light/dark switch repaints the markers with the rest of the page.
+   */
+  const C = (name, fallback) =>
+    (getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim()
+    || fallback;
+
   /* The map's whole vocabulary, in one place.
    *
    * The legend used to be nowhere and the colours were literals scattered through
    * drawMarkers and drawRoute. A legend written separately from the code that draws is a
    * legend that goes stale, so both read this.
    */
-  const MAPKEY = {
+  const MAPKEY = () => ({
     lines: [
-      { color: '#5b93b8', label: 'Parkway open', note: 'rideable in 2026' },
-      { color: '#c8552f', label: 'Parkway closed', note: 'dashed — Helene damage and roadworks',
-        dash: true },
-      { color: '#e0a33e', label: 'Your route', note: 'the ride as planned', weight: 5 },
-      { color: '#7fa35c', label: 'Road legs', note: 'to the Parkway, off to camp, home' },
-      { color: '#a9b39c', label: 'Straight-line estimate', note: 'no road route came back',
-        dash: true }
+      { color: C('--sky', '#7fd3f5'), label: 'Parkway open', note: 'rideable in 2026' },
+      { color: C('--rust', '#e0623a'), label: 'Parkway closed',
+        note: 'dashed — Helene damage and roadworks', dash: true },
+      { color: C('--amber', '#f0b44a'), label: 'Your route', note: 'the ride as planned' },
+      { color: C('--moss', '#6fc08a'), label: 'Road legs',
+        note: 'to the Parkway, off to camp, home' },
+      { color: C('--dim', '#9fb6c4'), label: 'Straight-line estimate',
+        note: 'no road route came back', dash: true }
     ],
     places: [
-      { color: '#e0a33e', label: 'Top pick' },
-      { color: '#c8552f', label: 'Motorcycle camp' },
-      { color: '#7fa35c', label: 'Campground' },
-      { color: '#5b93b8', label: 'Hotel or motel' }
+      { color: C('--amber', '#f0b44a'), label: 'Top pick' },
+      { color: C('--rust', '#e0623a'), label: 'Motorcycle camp' },
+      { color: C('--moss', '#6fc08a'), label: 'Campground' },
+      { color: C('--sky', '#7fd3f5'), label: 'Hotel or motel' }
     ],
     fuel: [
-      { color: '#5b93b8', label: 'Fuel — researched', note: 'verified for this planner' },
-      { color: '#8fb0c9', label: 'Fuel — Google', note: 'listed, not visited' },
-      { color: '#e0a33e', label: 'Fuel — unconfirmed' },
-      { color: '#c8552f', label: 'Fuel — do not rely on it' },
-      { color: '#6b6b6b', label: 'Fuel — unreachable in 2026' }
+      { color: C('--sky', '#7fd3f5'), label: 'Fuel — researched',
+        note: 'verified for this planner' },
+      { color: C('--faint', '#8ea3ae'), label: 'Fuel — Google', note: 'listed, not visited' },
+      { color: C('--amber', '#f0b44a'), label: 'Fuel — unconfirmed' },
+      { color: C('--rust', '#e0623a'), label: 'Fuel — do not rely on it' },
+      { color: C('--off', '#5b7280'), label: 'Fuel — unreachable in 2026' }
     ]
-  };
+  });
 
-  const PLACE_COLOR = c => c.kind === 'hotel' ? '#5b93b8'
-                         : c.moto ? '#c8552f'
-                         : c.tier === 'top' ? '#e0a33e' : '#7fa35c';
+  const PLACE_COLOR = c => c.kind === 'hotel' ? C('--sky', '#7fd3f5')
+                         : c.moto ? C('--rust', '#e0623a')
+                         : c.tier === 'top' ? C('--amber', '#f0b44a') : C('--moss', '#6fc08a');
   // Google-listed pumps get a paler blue than researched ones: usable, and visibly a
   // weaker claim, without inventing a whole new colour for a fifth state.
-  const FUEL_COLOR = f => ({ usable: '#5b93b8', usable_via_detour: '#5b93b8',
-                             usable_google: '#8fb0c9',
-                             unconfirmed: '#e0a33e', do_not_rely: '#c8552f',
-                             unreachable: '#6b6b6b' }[f.plan_grade] || '#5b93b8');
+  const FUEL_COLOR = f => ({
+    usable: C('--sky', '#7fd3f5'), usable_via_detour: C('--sky', '#7fd3f5'),
+    usable_google: C('--faint', '#8ea3ae'),
+    unconfirmed: C('--amber', '#f0b44a'), do_not_rely: C('--rust', '#e0623a'),
+    unreachable: C('--off', '#5b7280') }[f.plan_grade] || C('--sky', '#7fd3f5'));
 
   /* A legend the rider can collapse. Open by default the first time, because a map of
    * unexplained coloured dots is the thing being fixed; remembered thereafter. */
@@ -1832,9 +1846,10 @@
         body.append(row);
       });
     };
-    group('Lines', MAPKEY.lines, 'line');
-    group('Places to stay', MAPKEY.places, 'pin');
-    group('Fuel', MAPKEY.fuel, 'pin');
+    const key = MAPKEY();
+    group('Lines', key.lines, 'line');
+    group('Places to stay', key.places, 'pin');
+    group('Fuel', key.fuel, 'pin');
     body.append(el('div', 'legend-note',
       'A bigger dot is a place researched for this planner. Tap any marker to see it; '
       + 'nothing is added to your trip until you say so.'));
@@ -1948,18 +1963,18 @@
       (trip.roadLegs || []).forEach(leg => {
         const road = Directions.peek(leg.from, leg.to);
         if (road && road.ok && road.polyline && road.polyline.length > 1) {
-          L.polyline(road.polyline, { color: '#7fa35c', weight: 4, opacity: .95 })
+          L.polyline(road.polyline, { color: C('--moss', '#6fc08a'), weight: 4, opacity: .95 })
             .bindTooltip(`${leg.label} — ${road.distance_mi} mi by road`, { sticky: true })
             .addTo(layers.route);
         } else {
           L.polyline([leg.from, leg.to],
-                     { color: '#a9b39c', weight: 2, opacity: .7, dashArray: '4 7' })
+                     { color: C('--dim', '#9fb6c4'), weight: 2, opacity: .7, dashArray: '4 7' })
             .bindTooltip(`${leg.label} — straight-line estimate, not a road route`,
                          { sticky: true })
             .addTo(layers.route);
         }
       });
-      L.marker([state.start.lat, state.start.lon], { icon: dot('#eef0e8', 13) })
+      L.marker([state.start.lat, state.start.lon], { icon: dot(C('--fg', '#f2efe6'), 13) })
         .bindTooltip(state.start.label, { direction: 'top' })
         .addTo(layers.route);
     }
@@ -1972,11 +1987,12 @@
                    : (r.track.length ? [r.track] : []);
         runs.forEach(run => {
           if (run.length > 1) {
-            L.polyline(run, { color: '#e0a33e', weight: 5, opacity: .95 }).addTo(layers.route);
+            L.polyline(run, { color: C('--amber', '#f0b44a'), weight: 5, opacity: .95 })
+              .addTo(layers.route);
           }
         });
         r.rtepts.filter(p => p.type === 'via').forEach(p => {
-          L.marker([p.lat, p.lon], { icon: dot('#eef0e8', 14) })
+          L.marker([p.lat, p.lon], { icon: dot(C('--fg', '#f2efe6'), 14) })
             .bindTooltip(p.name, { direction: 'top' }).addTo(layers.route);
         });
       });
