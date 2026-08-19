@@ -167,7 +167,7 @@ def exit_reserve_mi(fuel, dest_mp, component=None, max_detour_mi=None):
 
 def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0,
                  max_detour_mi=None, component=None, require_exit_fuel=True,
-                 start_tank_mi=None):
+                 start_tank_mi=None, arrive_min_mi=0.0):
     """Fuel for a whole journey, not a single leg.
 
     `waypoints` is the ordered list of mileposts the rider passes through: where they join
@@ -188,7 +188,23 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
         return {"ok": False, "stops": [], "notes": [],
                 "error": "A journey needs somewhere to start and somewhere to end."}
 
-    planning_range = tank_mi * (1.0 - reserve_frac)
+    # `arrive_min_mi` is how much range the rider wants left when they roll up to a pump.
+    #
+    # Greedy planning rides every tank to its limit, which minimises stops and is exactly
+    # why a real trip reported "cutting it fine -- about 0.8 mi of planning range left".
+    # Correct, and useless: nobody rides to a station on eight tenths of a mile.
+    #
+    # It works by shortening the tank rather than by adding a rule. If a rider will not go
+    # below 10 miles, a 200 mile tank is a 190 mile tank for planning, and every leg the
+    # greedy loop plans lands with those 10 miles still in it. One subtraction, and the
+    # whole existing calculation inherits it.
+    buffer_mi = max(0.0, arrive_min_mi)
+    planning_range = tank_mi * (1.0 - reserve_frac) - buffer_mi
+    if planning_range <= 0:
+        return {"ok": False, "stops": [], "notes": [],
+                "error": (f"Arriving with {buffer_mi:.0f} mi in hand leaves nothing to ride "
+                          f"on from a {tank_mi:.0f} mi tank. Lower the buffer or raise the "
+                          f"tank range.")}
 
     # Lay the journey out as one distance line and place every usable exit at the position
     # where the rider actually passes it.
@@ -246,9 +262,12 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
                 "shortfall_mi": round(need - remaining, 1),
             }
         stop = max(reachable, key=lambda m: m["pos"])
+        left = remaining - (stop["pos"] - at) - stop["detour_mi"]
         stops.append({**stop,
-                      "arrive_with_mi": round(remaining - (stop["pos"] - at)
-                                              - stop["detour_mi"], 1)})
+                      "arrive_with_mi": round(left, 1),
+                      # What is actually in the tank on arrival: the rider thinks in fuel,
+                      # not in the abstraction the planner rides on.
+                      "arrive_tank_mi": round(left + buffer_mi, 1)})
         at = stop["pos"]
         remaining = planning_range - stop["detour_mi"]   # full tank, minus the ride back
 
@@ -263,7 +282,7 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
             st = queue.pop(0)
             cur = planning_range - st["detour_mi"]
             cursor = st["pos"]
-        tank_at.append({"mp": wp, "tank_mi": round(cur - (wpos - cursor), 1)})
+        tank_at.append({"mp": wp, "tank_mi": round(cur - (wpos - cursor) + buffer_mi, 1)})
 
     if exit_mi is not None and exit_stop is not None:
         notes.append(f"Nearest fuel to where you leave the Parkway is "
@@ -279,7 +298,8 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
         # Where each waypoint falls along the journey line, so a caller can place a fuel
         # stop on the correct leg. A round trip passes the same milepost twice.
         "waypoint_pos": [round(p, 2) for p in waypoint_pos],
-        "arrive_with_mi": round(remaining - (journey_mi - at), 1),
+        "arrive_with_mi": round(remaining - (journey_mi - at) + buffer_mi, 1),
+        "arrive_min_mi": round(buffer_mi, 1),
         "planning_range_mi": round(planning_range, 1),
         "parkway_mi": round(journey_mi, 1),
         "approach_mi": round(approach_leg_mi, 1),
@@ -289,7 +309,7 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
 
 def plan_fuel(fuel, access_mp, dest_mp, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0,
               full_at_access=True, max_detour_mi=None, component=None,
-              require_exit_fuel=True):
+              require_exit_fuel=True, arrive_min_mi=0.0):
     """Single-leg convenience wrapper over plan_journey.
 
     The approach leg does NOT consume range. This dataset maps fuel at Parkway exits and
@@ -298,7 +318,8 @@ def plan_fuel(fuel, access_mp, dest_mp, tank_mi, approach_leg_mi=0.0, reserve_fr
     reported "you cannot make it" for trips any rider completes by filling up on the way
     in. The approach produces advice; the Parkway calculation starts at the access point.
     """
-    planning_range = tank_mi * (1.0 - reserve_frac)
+    # Same figure plan_journey will use, so the advice below matches the plan.
+    planning_range = tank_mi * (1.0 - reserve_frac) - max(0.0, arrive_min_mi)
     notes = []
     if not full_at_access:
         notes.append("Planning as though you join the Parkway on a partial tank.")
@@ -314,6 +335,7 @@ def plan_fuel(fuel, access_mp, dest_mp, tank_mi, approach_leg_mi=0.0, reserve_fr
     result = plan_journey(fuel, [access_mp, dest_mp], tank_mi,
                           approach_leg_mi=approach_leg_mi, reserve_frac=reserve_frac,
                           max_detour_mi=max_detour_mi, component=component,
-                          require_exit_fuel=require_exit_fuel)
+                          require_exit_fuel=require_exit_fuel,
+                          arrive_min_mi=arrive_min_mi)
     result["notes"] = notes + result.get("notes", [])
     return result

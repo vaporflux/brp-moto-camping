@@ -16,8 +16,12 @@
   const state = {
     name: 'Blue Ridge Parkway',
     stops: [],            // ordered; each carries dayBreakAfter
-    maxMilesPerDay: 180,
     maxFuelDetourMi: 8,
+    // How much range the rider wants left when they arrive at a pump. Greedy planning
+    // rides every tank to its limit, which is how a real trip produced "cutting it fine
+    // -- about 0.8 mi of planning range left". Ten miles is the default because nobody
+    // rides to a station on less.
+    arriveMinMi: 10,
     tankMi: 200,              // usable miles on a tank. NOT a GSA assumption.
     start: null,              // {lat, lon, label} — where the rider actually begins
     accessMp: null,           // chosen Parkway entry; null = let the planner pick
@@ -55,7 +59,7 @@
   function save() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({
-        name: state.name, stops: state.stops, maxMilesPerDay: state.maxMilesPerDay,
+        name: state.name, stops: state.stops, arriveMinMi: state.arriveMinMi,
         maxFuelDetourMi: state.maxFuelDetourMi, checklist: state.checklist,
         device: state.device, tankMi: state.tankMi,
         start: state.start, accessMp: state.accessMp,
@@ -89,7 +93,7 @@
 
   /* ---- day assembly ------------------------------------------------------- */
 
-  /* Days are the user's explicit breaks. autoSplit() proposes breaks by mileage, but it
+  /* Days are the user's explicit breaks. Nothing proposes them by mileage, because it
    * never overrides one the rider set — where you sleep is a decision about campsites and
    * daylight, not something a mileage heuristic should quietly rewrite. */
   /* The stop list the router actually sees. When a start address is set, the rider's home
@@ -252,13 +256,11 @@
         const routes = Router.splitDay(stops).map(r => withRoadGeometry(r, trip));
         const worst = gapForDay(i);
         const totalMi = routes.reduce((a, r) => a + r.totalMi, 0);
+        // A day-length warning used to live here, comparing totalMi against a "max miles
+        // per day" the rider set. That field is gone, and rather than invent a threshold
+        // to keep the warning alive, the warning went with it -- the day's mileage is
+        // still on the day itself for anyone who wants to judge it.
         const warnings = routes.flatMap(r => r.warnings);
-        if (totalMi > state.maxMilesPerDay) {
-          warnings.unshift({
-            level: 'warn',
-            text: `${totalMi.toFixed(0)} mi exceeds your ${state.maxMilesPerDay} mi/day limit.`
-          });
-        }
         if (worst && worst.gapMi > 40) {
           // Only an error if the rider's tank cannot span it. Otherwise it is context.
           const spanned = worst.gapMi <= state.tankMi;
@@ -331,6 +333,7 @@
 
     const fuel = Access.planJourney({
       waypoints, tankMi: state.tankMi, approachLegMi: chosen.approachMi,
+      arriveMinMi: state.arriveMinMi,
       maxDetourMi: state.maxFuelDetourMi, component
     });
 
@@ -363,19 +366,6 @@
     return { chosen, options, fuel, dest, severedNote, exitPoint, endLabel, roadLegs,
              approachMi: chosen.approachMi,
              parkwayMi: fuel.parkwayMi != null ? fuel.parkwayMi : Math.abs(dest.mp - chosen.mp) };
-  }
-
-  function autoSplit() {
-    state.stops.forEach(s => { s.dayBreakAfter = false; });
-    let acc = 0;
-    for (let i = 0; i < state.stops.length - 1; i++) {
-      const a = state.stops[i], b = state.stops[i + 1];
-      acc += Math.abs(b.mp - a.mp) + (a.offParkwayMi || 0) + (b.offParkwayMi || 0);
-      if (acc >= state.maxMilesPerDay && i < state.stops.length - 2) {
-        b.dayBreakAfter = true; acc = 0;
-      }
-    }
-    render();
   }
 
   /* ---- stop list mutation -------------------------------------------------- */
@@ -1023,12 +1013,16 @@
 
     const rowA = el('div', 'field-row');
     rowA.append(mk('tankMi', 'Miles on a tank', 20, 600));
-    rowA.append(mk('maxMilesPerDay', 'Max miles / day', 20, 600));
+    rowA.append(mk('arriveMinMi', 'Arrive at fuel with at least', 0, 150, 'miles left'));
     sec.append(rowA);
     const rowB = el('div', 'field-row');
     rowB.append(mk('maxFuelDetourMi', 'Furthest you will ride off the Parkway for fuel',
                    1, 30));
     sec.append(rowB);
+    sec.append(el('p', 'tiny',
+      'The planner rides each tank as far as it goes, so without a buffer it will happily '
+      + 'route you into a station on under a mile of range. Whatever you set here is still '
+      + 'in the tank when you arrive — raise it and you get more stops, closer together.'));
     sec.append(el('p', 'tiny',
       'There is no fuel anywhere on the Parkway itself, so the detour limit decides which '
       + 'exits count. Raising it past 18 mi is what opens up MP 411.8 and closes the '
@@ -1108,6 +1102,15 @@
   }
 
   /* ---- the answer --------------------------------------------------------------- */
+  /* "US 21, Roaring Gap / Sparta, Roaring Gap / Sparta" -- many exit roads already carry
+   * their town, so joining the two fields blindly says it twice. */
+  const fuelLabel = stop => {
+    const road = (stop.road || '').trim(), town = (stop.town || '').trim();
+    if (!town) return road;
+    if (!road) return town;
+    return road.toLowerCase().includes(town.toLowerCase()) ? road : `${road}, ${town}`;
+  };
+
   function sectionItinerary() {
     const wrap = document.createDocumentFragment();
     if (!state.start || !state.stops.length) {
@@ -1215,17 +1218,22 @@
       // point: a rider who cannot tell will read it as a stop they already made.
       const lastStayPos = wpos ? wpos[state.stops.length] : Infinity;
       f.stops.forEach(stop => {
-        const tight = stop.arriveWithMi < 15;
+        // Arriving on exactly the buffer is the plan WORKING, not a warning. The floor
+        // is the rider's own; flagging it would be the app second-guessing a number they
+        // just typed. So this fires only below the buffer -- or below 10 mi when they
+        // have set no buffer at all, which is the case the buffer exists to prevent.
+        const floor = Math.max(10, f.arriveMinMi || 0);
+        const tight = stop.arriveTankMi < floor - 0.05;
         const homeward = stop.pos > lastStayPos + 1e-6;
         const detail = [
           homeward ? 'On the way home' : null,
           stop.detourMi ? `${stop.detourMi} mi off the Parkway` : 'right at the exit',
-          tight ? `cutting it fine — about ${stop.arriveWithMi} mi of planning range left`
-                : `about ${stop.arriveWithMi} mi of range still in hand`
+          tight ? `cutting it fine — you arrive with about ${stop.arriveTankMi} mi in the tank`
+                : `about ${stop.arriveTankMi} mi in the tank on arrival`
         ].filter(Boolean).join(' \u00b7 ');
         events.push({ pos: stop.pos, order: 2, row: () => stepRow(
           `MP ${stop.mp}`,
-          `Fuel — ${[stop.road, stop.town].filter(Boolean).join(', ')}`,
+          `Fuel — ${fuelLabel(stop)}`,
           detail, (tight || stop.grade === 'unconfirmed') ? 'warn' : null) });
       });
     }
@@ -1581,7 +1589,7 @@
     const exp = el('button', 'btn sm ghost', 'Export JSON');
     exp.onclick = () => download(`${Gpx.safeName(state.name, 40) || 'brp-trip'}.json`,
       JSON.stringify({ name: state.name, stops: state.stops,
-                       maxMilesPerDay: state.maxMilesPerDay,
+                       tankMi: state.tankMi, arriveMinMi: state.arriveMinMi,
                        maxFuelDetourMi: state.maxFuelDetourMi }, null, 1));
     const imp = el('button', 'btn sm ghost', 'Import JSON');
     imp.onclick = () => $('#importer').click();
