@@ -3,6 +3,7 @@
 
     python3 build/fetch_osm.py            # writes data/osm_places.json
     python3 build/fetch_osm.py --radius 25
+    python3 build/fetch_osm.py --raw saved-overpass.json   # already downloaded
 
 Why this and not a live API: the result is baked into the page, so it keeps working in a
 gap with no signal. No key, no per-request cost, and the ODbL licence permits
@@ -12,10 +13,12 @@ and the Notes tab).
 This is the offline tier. Google Places fills gaps live, on demand, through api/places.js
 when there IS signal -- see app/README.md.
 
-NOTE: this script could not be exercised where it was written. `overpass-api.de` is blocked
-by that environment's egress policy, so the query below is unverified against a live
-server. It validates whatever it receives and refuses to write nonsense, but the first run
-is yours. If Overpass is busy, it retries the public mirrors in turn.
+NOTE on what has and has not been exercised. The parsing, milepost placement, distance
+filtering and three-state amenity handling have all run against a real Overpass response
+(2,849 elements, fetched by hand and fed in with --raw). The HTTP path -- the mirror list
+and its retries -- has not: `overpass-api.de` is blocked by the egress policy where this
+was written. So a live run may still surprise you, but what it does with the answer will
+not. If Overpass is busy, it retries the public mirrors in turn.
 """
 import argparse
 import json
@@ -40,15 +43,20 @@ ENDPOINTS = [
     "https://overpass.osm.ch/api/interpreter",
 ]
 
-# BRP is OSM relation 55450. Querying "around" its ways is far cheaper and far more precise
-# than a bounding box, which would drag in every hotel in Roanoke, Asheville and Charlotte.
+# A bounding box around the centerline, not a buffer around it.
+#
+# The obvious query is `around` on the ways of relation 55450, and it is more precise -- but
+# a 25 mi buffer over 2,689 centerline points needs more than 2 GB and Overpass kills it:
+#   "runtime error: Query run out of memory using about 2048 MB of RAM."
+# A tag-filtered bounding box is indexed and cheap. It drags in every hotel in Roanoke,
+# Knoxville and Charlotte as well, but that costs nothing here: main() measures each result
+# against the real centerline and drops whatever falls outside --radius. The precision comes
+# from that check, so it does not have to come from Overpass.
 QUERY = """
 [out:json][timeout:{timeout}];
-rel({relation});
-way(r)->.pw;
 (
-  node(around.pw:{metres})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
-  way(around.pw:{metres})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
+  node({s},{w},{n},{e})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
+  way({s},{w},{n},{e})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
 );
 out center tags;
 """
@@ -77,8 +85,23 @@ def tri(tags, key):
     return None
 
 
-def fetch(relation, metres, timeout):
-    body = QUERY.format(relation=relation, metres=metres, timeout=timeout)
+def bbox(model, radius_mi):
+    """The centerline's extent, padded by the search radius.
+
+    Latitude is ~69 mi per degree everywhere; longitude shrinks with latitude, so the
+    padding uses the widest (lowest-latitude) row to stay generous rather than clip.
+    """
+    lats = [p[0] for p in model.pts]
+    lons = [p[1] for p in model.pts]
+    pad_lat = radius_mi / 69.0
+    pad_lon = radius_mi / (69.0 * math.cos(math.radians(max(abs(min(lats)), abs(max(lats))))))
+    return (min(lats) - pad_lat, min(lons) - pad_lon,
+            max(lats) + pad_lat, max(lons) + pad_lon)
+
+
+def fetch(box, timeout):
+    body = QUERY.format(s=f"{box[0]:.4f}", w=f"{box[1]:.4f}",
+                        n=f"{box[2]:.4f}", e=f"{box[3]:.4f}", timeout=timeout)
     data = urllib.parse.urlencode({"data": body}).encode()
     last = None
     for url in ENDPOINTS:
@@ -107,17 +130,38 @@ def main():
                     help="miles from the Parkway centerline to include (default 25)")
     ap.add_argument("--relation", type=int, default=55450)
     ap.add_argument("--timeout", type=int, default=240)
+    ap.add_argument("--raw", metavar="PATH",
+                    help="process a previously downloaded Overpass response instead of "
+                         "querying. For when this machine cannot reach Overpass but "
+                         "another one can -- the parsing, milepost placement and "
+                         "three-state amenity handling are identical either way.")
     args = ap.parse_args()
 
-    metres = int(args.radius * 1609.344)
-    print(f"Fetching camp sites and lodging within {args.radius} mi of the Parkway…")
-    payload = fetch(args.relation, metres, args.timeout)
+    model, _ = M.load(DATA)
+
+    if args.raw:
+        print(f"Reading a saved Overpass response from {args.raw}…")
+        with open(args.raw) as f:
+            payload = json.load(f)
+    else:
+        box = bbox(model, args.radius)
+        print(f"Fetching camp sites and lodging within {args.radius} mi of the Parkway…")
+        print(f"  bounding box {box[0]:.3f},{box[1]:.3f} to {box[2]:.3f},{box[3]:.3f}")
+        payload = fetch(box, args.timeout)
+
+    # Overpass reports a failed query as HTTP 200 with an empty element list and a remark.
+    # Treating that as "no results" would quietly write an empty file, so name it instead.
+    remark = (payload.get("remark") or "").strip()
     elements = payload.get("elements", [])
+    if remark and not elements:
+        raise SystemExit(
+            f"Overpass refused the query: {remark}\n"
+            "Nothing was written. If this is a memory error, lower --radius and retry.")
     print(f"  {len(elements)} raw elements")
+    if remark:
+        print(f"  NOTE: Overpass also said: {remark}")
     if not elements:
         raise SystemExit("Overpass returned nothing. Not overwriting the existing file.")
-
-    model, _ = M.load(DATA)
 
     places, skipped = [], 0
     for e in elements:
