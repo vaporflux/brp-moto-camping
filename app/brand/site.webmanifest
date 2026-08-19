@@ -1,0 +1,17 @@
+{
+  "name": "Blue Ridge Parkway Moto Camping",
+  "short_name": "BRP Camp",
+  "description": "32 shower-equipped campgrounds along the Blue Ridge Parkway, MP 0-469.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e1a22",
+  "theme_color": "#0e1a22",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
