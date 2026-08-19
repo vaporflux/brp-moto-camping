@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 node_modules/
 .DS_Store
+
+# scratch screenshots from browser test runs
+/.*.png
