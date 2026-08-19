@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="BRP Trip Planner"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3"
+     xmlns:trp="http://www.garmin.com/xmlschemas/TripExtensions/v1"
+     xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd
+       http://www.garmin.com/xmlschemas/GpxExtensions/v3 http://www8.garmin.com/xmlschemas/GpxExtensionsv3.xsd
+       http://www.garmin.com/xmlschemas/TripExtensions/v1 http://www8.garmin.com/xmlschemas/TripExtensionsv1.xsd">
+  <metadata><name>BRP D1 Asheville-Pisgah</name></metadata>
+  <wpt lat="35.5870200" lon="-82.4879000">
+    <name>FUEL US 70 Asheville Oteen</name>
+    <sym>Flag, Green</sym>
+    <type>user</type>
+    <extensions>
+      <gpxx:WaypointExtension xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3">
+        <gpxx:DisplayMode>SymbolAndName</gpxx:DisplayMode>
+      </gpxx:WaypointExtension>
+    </extensions>
+  </wpt>
+  <wpt lat="35.5223800" lon="-82.6064700">
+    <name>FUEL NC 191 Brevard Road</name>
+    <sym>Gas Station</sym>
+    <type>user</type>
+    <extensions>
+      <gpxx:WaypointExtension xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3">
+        <gpxx:DisplayMode>SymbolAndName</gpxx:DisplayMode>
+      </gpxx:WaypointExtension>
+    </extensions>
+  </wpt>
+  <wpt lat="35.4048700" lon="-82.7567500">
+    <name>Mount Pisgah Campground NPS</name>
+    <sym>Campground</sym>
+    <type>user</type>
+    <extensions>
+      <gpxx:WaypointExtension xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3">
+        <gpxx:DisplayMode>SymbolAndName</gpxx:DisplayMode>
+      </gpxx:WaypointExtension>
+    </extensions>
+  </wpt>
+  <wpt lat="35.4688600" lon="-82.8781400">
+    <name>FUEL US 276 Wagon Road Gap</name>
+    <sym>Flag, Red</sym>
+    <type>user</type>
+    <extensions>
+      <gpxx:WaypointExtension xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3">
+        <gpxx:DisplayMode>SymbolAndName</gpxx:DisplayMode>
+      </gpxx:WaypointExtension>
+    </extensions>
+  </wpt>
+  <rte>
+    <name>BRP D1 Asheville-Pisgah</name>
+    <extensions>
+      <trp:Trip>
+        <trp:TransportationMode>Motorcycling</trp:TransportationMode>
+      </trp:Trip>
+      <gpxx:RouteExtension>
+        <gpxx:IsAutoNamed>false</gpxx:IsAutoNamed>
+        <gpxx:DisplayColor>Magenta</gpxx:DisplayColor>
+      </gpxx:RouteExtension>
+    </extensions>
+      <rtept lat="35.5870200" lon="-82.4879000">
+        <name>FUEL US 70 Asheville Oteen</name>
+        <sym>Flag, Green</sym>
+        <extensions>
+          <trp:ViaPoint>
+            <trp:CalculationMode>FasterTime</trp:CalculationMode>
+            <trp:ElevationMode>Standard</trp:ElevationMode>
+          </trp:ViaPoint>
+          <gpxx:RoutePointExtension>
+            <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          </gpxx:RoutePointExtension>
+        </extensions>
+      </rtept>
+      <rtept lat="35.5577523" lon="-82.4958070">
+        <extensions>
+          <trp:ShapingPoint />
+          <gpxx:RoutePointExtension>
+            <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          </gpxx:RoutePointExtension>
+        </extensions>
+      </rtept>
+      <rtept lat="35.5158241" lon="-82.5338679">
+        <extensions>
+          <trp:ShapingPoint />
+          <gpxx:RoutePointExtension>
+            <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          </gpxx:RoutePointExtension>
+        </extensions>
+      </rtept>
+      <rtept lat="35.5223800" lon="-82.6064700">
+        <name>FUEL NC 191 Brevard Road</name>
+        <sym>Gas Station</sym>
+        <extensions>
+          <trp:ViaPoint>
+            <trp:CalculationMode>FasterTime</trp:CalculationMode>
+            <trp:ElevationMode>Standard</trp:ElevationMode>
+          </trp:ViaPoint>
+          <gpxx:RoutePointExtension>
+            <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          </gpxx:RoutePointExtension>
+        </extensions>
+      </rtept>
+      <rtept lat="35.4672579" lon="-82.6262213">
+        <extensions>
+          <trp:ShapingPoint />
+          <gpxx:RoutePointExtension>
+            <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          </gpxx:RoutePointExtension>
+        </extensions>
+      </rtept>
+      <rtept lat="35.4562504" lon="-82.6708645">
+        <extensions>
+          <trp:ShapingPoint />
+          <gpxx:RoutePointExtension>
+            <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          </gpxx:RoutePointExtension>
+        </extensions>
+      </rtept>
+      <rtept lat="35.4414339" lon="-82.7238989">
+        <extensions>
+          <trp:ShapingPoint />
+          <gpxx:RoutePointExtension>
+            <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          </gpxx:RoutePointExtension>
+        </extensions>
+      </rtept>
+      <rtept lat="35.4048700" lon="-82.7567500">
+        <name>Mount Pisgah Campground NPS</name>
+        <sym>Campground</sym>
+        <extensions>
+          <trp:ViaPoint>
+            <trp:CalculationMode>FasterTime</trp:CalculationMode>
+            <trp:ElevationMode>Standard</trp:ElevationMode>
+          </trp:ViaPoint>
+          <gpxx:RoutePointExtension>
+            <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          </gpxx:RoutePointExtension>
+        </extensions>
+      </rtept>
+      <rtept lat="35.4688600" lon="-82.8781400">
+        <name>FUEL US 276 Wagon Road Gap</name>
+        <sym>Flag, Red</sym>
+        <extensions>
+          <trp:ViaPoint>
+            <trp:CalculationMode>FasterTime</trp:CalculationMode>
+            <trp:ElevationMode>Standard</trp:ElevationMode>
+          </trp:ViaPoint>
+          <gpxx:RoutePointExtension>
+            <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+          </gpxx:RoutePointExtension>
+        </extensions>
+      </rtept>
+  </rte>
+  <trk>
+    <name>BRP D1 Asheville-Pisgah track</name>
+    <extensions>
+      <gpxx:TrackExtension>
+        <gpxx:DisplayColor>Blue</gpxx:DisplayColor>
+      </gpxx:TrackExtension>
+    </extensions>
+    <trkseg>
+        <trkpt lat="35.5846392" lon="-82.4778780" />
+        <trkpt lat="35.5836600" lon="-82.4769300" />
+        <trkpt lat="35.5811800" lon="-82.4761500" />
+        <trkpt lat="35.5790400" lon="-82.4777400" />
+        <trkpt lat="35.5768000" lon="-82.4789600" />
+        <trkpt lat="35.5741700" lon="-82.4797100" />
+        <trkpt lat="35.5726600" lon="-82.4819000" />
+        <trkpt lat="35.5700000" lon="-82.4833300" />
+        <trkpt lat="35.5672700" lon="-82.4844600" />
+        <trkpt lat="35.5649000" lon="-82.4860100" />
+        <trkpt lat="35.5636900" lon="-82.4882900" />
+        <trkpt lat="35.5632300" lon="-82.4909100" />
+        <trkpt lat="35.5623200" lon="-82.4933500" />
+        <trkpt lat="35.5604800" lon="-82.4951400" />
+        <trkpt lat="35.5577400" lon="-82.4958100" />
+        <trkpt lat="35.5550300" lon="-82.4962100" />
+        <trkpt lat="35.5524800" lon="-82.4972600" />
+        <trkpt lat="35.5500800" lon="-82.4980100" />
+        <trkpt lat="35.5474700" lon="-82.4979600" />
+        <trkpt lat="35.5454300" lon="-82.4994200" />
+        <trkpt lat="35.5428400" lon="-82.4986600" />
+        <trkpt lat="35.5402900" lon="-82.4991700" />
+        <trkpt lat="35.5385500" lon="-82.5013500" />
+        <trkpt lat="35.5369800" lon="-82.5035300" />
+        <trkpt lat="35.5347600" lon="-82.5047500" />
+        <trkpt lat="35.5321200" lon="-82.5081800" />
+        <trkpt lat="35.5299200" lon="-82.5094800" />
+        <trkpt lat="35.5280900" lon="-82.5114200" />
+        <trkpt lat="35.5260000" lon="-82.5128600" />
+        <trkpt lat="35.5252100" lon="-82.5160600" />
+        <trkpt lat="35.5247900" lon="-82.5186900" />
+        <trkpt lat="35.5236100" lon="-82.5215000" />
+        <trkpt lat="35.5219400" lon="-82.5248000" />
+        <trkpt lat="35.5205900" lon="-82.5270300" />
+        <trkpt lat="35.5186800" lon="-82.5293400" />
+        <trkpt lat="35.5167300" lon="-82.5311600" />
+        <trkpt lat="35.5158000" lon="-82.5339400" />
+        <trkpt lat="35.5155400" lon="-82.5366300" />
+        <trkpt lat="35.5151900" lon="-82.5400100" />
+        <trkpt lat="35.5142000" lon="-82.5447500" />
+        <trkpt lat="35.5131200" lon="-82.5491000" />
+        <trkpt lat="35.5123900" lon="-82.5521800" />
+        <trkpt lat="35.5120900" lon="-82.5547400" />
+        <trkpt lat="35.5106600" lon="-82.5568500" />
+        <trkpt lat="35.5077600" lon="-82.5572400" />
+        <trkpt lat="35.5054500" lon="-82.5586000" />
+        <trkpt lat="35.5024200" lon="-82.5585300" />
+        <trkpt lat="35.4996400" lon="-82.5579700" />
+        <trkpt lat="35.4975900" lon="-82.5601900" />
+        <trkpt lat="35.4967500" lon="-82.5626300" />
+        <trkpt lat="35.4959800" lon="-82.5651100" />
+        <trkpt lat="35.4965800" lon="-82.5676800" />
+        <trkpt lat="35.4980000" lon="-82.5699100" />
+        <trkpt lat="35.4983900" lon="-82.5725800" />
+        <trkpt lat="35.4996700" lon="-82.5748500" />
+        <trkpt lat="35.5000100" lon="-82.5774600" />
+        <trkpt lat="35.5007100" lon="-82.5799100" />
+        <trkpt lat="35.4999600" lon="-82.5824100" />
+        <trkpt lat="35.5011700" lon="-82.5846800" />
+        <trkpt lat="35.5013500" lon="-82.5874600" />
+        <trkpt lat="35.5006600" lon="-82.5901900" />
+        <trkpt lat="35.4999900" lon="-82.5926400" />
+        <trkpt lat="35.4977000" lon="-82.5937900" />
+        <trkpt lat="35.4993740" lon="-82.5929494" />
+        <trkpt lat="35.4977000" lon="-82.5937900" />
+        <trkpt lat="35.4949300" lon="-82.5938700" />
+        <trkpt lat="35.4925900" lon="-82.5956300" />
+        <trkpt lat="35.4904300" lon="-82.5978300" />
+        <trkpt lat="35.4879900" lon="-82.5972000" />
+        <trkpt lat="35.4852800" lon="-82.5993500" />
+        <trkpt lat="35.4840600" lon="-82.6015700" />
+        <trkpt lat="35.4815600" lon="-82.6018700" />
+        <trkpt lat="35.4793700" lon="-82.6002100" />
+        <trkpt lat="35.4770200" lon="-82.6011600" />
+        <trkpt lat="35.4747200" lon="-82.6022000" />
+        <trkpt lat="35.4745900" lon="-82.6053600" />
+        <trkpt lat="35.4751100" lon="-82.6079700" />
+        <trkpt lat="35.4746100" lon="-82.6108400" />
+        <trkpt lat="35.4745700" lon="-82.6135400" />
+        <trkpt lat="35.4746400" lon="-82.6161800" />
+        <trkpt lat="35.4736000" lon="-82.6185700" />
+        <trkpt lat="35.4733300" lon="-82.6211900" />
+        <trkpt lat="35.4708200" lon="-82.6222600" />
+        <trkpt lat="35.4683400" lon="-82.6236100" />
+        <trkpt lat="35.4673600" lon="-82.6259800" />
+        <trkpt lat="35.4663700" lon="-82.6283200" />
+        <trkpt lat="35.4638100" lon="-82.6288400" />
+        <trkpt lat="35.4625300" lon="-82.6311600" />
+        <trkpt lat="35.4627800" lon="-82.6339600" />
+        <trkpt lat="35.4612500" lon="-82.6361500" />
+        <trkpt lat="35.4589200" lon="-82.6370700" />
+        <trkpt lat="35.4569800" lon="-82.6389000" />
+        <trkpt lat="35.4545800" lon="-82.6399400" />
+        <trkpt lat="35.4520300" lon="-82.6405800" />
+        <trkpt lat="35.4498700" lon="-82.6426000" />
+        <trkpt lat="35.4483500" lon="-82.6452700" />
+        <trkpt lat="35.4481400" lon="-82.6477700" />
+        <trkpt lat="35.4497900" lon="-82.6496700" />
+        <trkpt lat="35.4511700" lon="-82.6519500" />
+        <trkpt lat="35.4531600" lon="-82.6536200" />
+        <trkpt lat="35.4531700" lon="-82.6563500" />
+        <trkpt lat="35.4525800" lon="-82.6590500" />
+        <trkpt lat="35.4523300" lon="-82.6618500" />
+        <trkpt lat="35.4526000" lon="-82.6644000" />
+        <trkpt lat="35.4544300" lon="-82.6662000" />
+        <trkpt lat="35.4562300" lon="-82.6681300" />
+        <trkpt lat="35.4562500" lon="-82.6708300" />
+        <trkpt lat="35.4562800" lon="-82.6735200" />
+        <trkpt lat="35.4543300" lon="-82.6752600" />
+        <trkpt lat="35.4540300" lon="-82.6780100" />
+        <trkpt lat="35.4534600" lon="-82.6810500" />
+        <trkpt lat="35.4534300" lon="-82.6837500" />
+        <trkpt lat="35.4523300" lon="-82.6861100" />
+        <trkpt lat="35.4528700" lon="-82.6885800" />
+        <trkpt lat="35.4520900" lon="-82.6910600" />
+        <trkpt lat="35.4537300" lon="-82.6933600" />
+        <trkpt lat="35.4546700" lon="-82.6957200" />
+        <trkpt lat="35.4539000" lon="-82.6986000" />
+        <trkpt lat="35.4545100" lon="-82.7012800" />
+        <trkpt lat="35.4536400" lon="-82.7039300" />
+        <trkpt lat="35.4519000" lon="-82.7058400" />
+        <trkpt lat="35.4506000" lon="-82.7084300" />
+        <trkpt lat="35.4499100" lon="-82.7116700" />
+        <trkpt lat="35.4500600" lon="-82.7143200" />
+        <trkpt lat="35.4483900" lon="-82.7162500" />
+        <trkpt lat="35.4464600" lon="-82.7179400" />
+        <trkpt lat="35.4440400" lon="-82.7193300" />
+        <trkpt lat="35.4417200" lon="-82.7214800" />
+        <trkpt lat="35.4413900" lon="-82.7242700" />
+        <trkpt lat="35.4394200" lon="-82.7259300" />
+        <trkpt lat="35.4376100" lon="-82.7278400" />
+        <trkpt lat="35.4358800" lon="-82.7298300" />
+        <trkpt lat="35.4332200" lon="-82.7298800" />
+        <trkpt lat="35.4307100" lon="-82.7306000" />
+        <trkpt lat="35.4303400" lon="-82.7333400" />
+        <trkpt lat="35.4306200" lon="-82.7359000" />
+        <trkpt lat="35.4298700" lon="-82.7384500" />
+        <trkpt lat="35.4275400" lon="-82.7395600" />
+        <trkpt lat="35.4252900" lon="-82.7407700" />
+        <trkpt lat="35.4227400" lon="-82.7413200" />
+        <trkpt lat="35.4208500" lon="-82.7432000" />
+        <trkpt lat="35.4190700" lon="-82.7451800" />
+        <trkpt lat="35.4178000" lon="-82.7475300" />
+        <trkpt lat="35.4162400" lon="-82.7495100" />
+        <trkpt lat="35.4139300" lon="-82.7506400" />
+        <trkpt lat="35.4115000" lon="-82.7492800" />
+        <trkpt lat="35.4089700" lon="-82.7502800" />
+        <trkpt lat="35.4070900" lon="-82.7525200" />
+        <trkpt lat="35.4047200" lon="-82.7537400" />
+        <trkpt lat="35.4027300" lon="-82.7558800" />
+        <trkpt lat="35.4027300" lon="-82.7558800" />
+        <trkpt lat="35.4027300" lon="-82.7558800" />
+        <trkpt lat="35.4014700" lon="-82.7584900" />
+        <trkpt lat="35.3993100" lon="-82.7601800" />
+        <trkpt lat="35.3969000" lon="-82.7610600" />
+        <trkpt lat="35.3953100" lon="-82.7630100" />
+        <trkpt lat="35.3948600" lon="-82.7655200" />
+        <trkpt lat="35.3951800" lon="-82.7681400" />
+        <trkpt lat="35.3935300" lon="-82.7706000" />
+        <trkpt lat="35.3920500" lon="-82.7728300" />
+        <trkpt lat="35.3901500" lon="-82.7747100" />
+        <trkpt lat="35.3877400" lon="-82.7755000" />
+        <trkpt lat="35.3862800" lon="-82.7775900" />
+        <trkpt lat="35.3858800" lon="-82.7801300" />
+        <trkpt lat="35.3829500" lon="-82.7797100" />
+        <trkpt lat="35.3811700" lon="-82.7814900" />
+        <trkpt lat="35.3813200" lon="-82.7840200" />
+        <trkpt lat="35.3808900" lon="-82.7865500" />
+        <trkpt lat="35.3783700" lon="-82.7872900" />
+        <trkpt lat="35.3758200" lon="-82.7885200" />
+        <trkpt lat="35.3739900" lon="-82.7903400" />
+        <trkpt lat="35.3754036" lon="-82.7889341" />
+    </trkseg>
+  </trk>
+</gpx>
