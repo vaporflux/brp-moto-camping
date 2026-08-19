@@ -203,6 +203,25 @@ def main():
     summ2 = P.summary(enriched)
     check("summary counts verified separately", summ2["verified"] == 2, str(summ2["verified"]))
 
+    # Google reported 15 of the 644 as permanently closed -- Boone Fork Campground, Blue
+    # Ridge Motorcycle Campgrounds and others that really are gone. Showing those is worse
+    # than showing nothing: the rider gets there in the dark and finds a padlock.
+    shut = dict(enrich)
+    shut["n1"] = {"osm_id": "n1", "match": {**enrich["n1"]["match"],
+                                            "business_status": "CLOSED_PERMANENTLY"}}
+    after = P.build(model, net, curated_raw, fake_osm, shut)
+    check("a permanently closed place is dropped",
+          not any(p["id"] == "osm-n1" for p in after))
+    # Temporarily closed reopens, so the rider decides -- but only if told.
+    paused = dict(enrich)
+    paused["n1"] = {"osm_id": "n1", "match": {**enrich["n1"]["match"],
+                                              "business_status": "CLOSED_TEMPORARILY"}}
+    after2 = P.build(model, net, curated_raw, fake_osm, paused)
+    kept = [p for p in after2 if p["id"] == "osm-n1"]
+    check("a temporarily closed place stays", len(kept) == 1)
+    check("and carries the status so the card can say so",
+          kept and kept[0]["business_status"] == "CLOSED_TEMPORARILY")
+
     print("junctions")
     check("coverage is declared incomplete, not assumed complete",
           "complete" in J.__doc__ or True)
