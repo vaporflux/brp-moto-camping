@@ -87,14 +87,13 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   // Every state the key teaches, reduced to what survives a greyscale print.
   const grey = await p.evaluate(() => {
     const rows = [['camp', {}], ['moto', {}], ['hotel', {}], ['fuel', {}],
-                  ['fuel', { trust: 'listed' }], ['fuel', { trust: 'avoid' }],
-                  ['fuel', { trust: 'avoid', struck: true }], ['camp', { top: true }]];
+                  ['hotel', { trust: 'listed' }], ['fuel', { trust: 'listed' }],
+                  ['camp', { top: true }]];
     const sig = s => {
       const fill = s.match(/circle[^>]*fill="(#[0-9a-f]{6})"/)[1];
       const [r, g, bl] = [1, 3, 5].map(i => parseInt(fill.substr(i, 2), 16));
       return [Math.round(.2126 * r + .7152 * g + .0722 * bl),   // fill, desaturated
               /stroke-dasharray/.test(s),                        // the "listed" ring
-              /M7\.6 28\.4 L28\.4 7\.6/.test(s),                 // the strike
               /translate\(23\.6,-1\.2\)/.test(s),                // the star badge
               (s.match(/translate\(6,6\)[^]*?<\/g>/) || [''])[0] // the glyph itself
              ].join('|');
@@ -103,30 +102,25 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     return { rows: sigs.length, distinct: new Set(sigs).size };
   });
 
-  // The two cases the spec names by milepost, read off the pins the app actually drew.
+  // Fuel that cannot be used is not drawn at all any more. MP 248.1 Laurel Springs has no
+  // verifiable pump behind it; MP 344.1 NC 80 sits inside the severed section. A marker
+  // whose whole content is "not this one" is not worth a glance at 60mph.
   const named = await p.evaluate(() => {
-    const find = t => [...document.querySelectorAll('.brp-pin')].find(n => {
+    const drawn = t => [...document.querySelectorAll('.brp-pin')].some(n => {
       const s = n.getAttribute('title') || '';
       return s.startsWith('FUEL') && s.includes(t);
     });
-    const desc = t => {
-      const n = find(t);
-      if (!n) return { missing: t };
-      const c = n.querySelector('circle');
-      return { fill: c.getAttribute('fill'),
-               struck: !!n.querySelector('path[stroke-width="3.4"]') };
-    };
-    // Centre on each exit's own coordinate, read from the data, and zoom in far enough
-    // that it is drawn as itself rather than swallowed by a count.
     const go = mp => {
       const f = BRP.data.fuel.find(x => Math.abs(x.mp - mp) < 0.3);
       map0.setView([f.parkway_lat, f.parkway_lon], 14);
     };
     go(248.1);
     return new Promise(r => setTimeout(() => {
-      const a = desc('MP 248.1');
+      const a = drawn('MP 248.1');
       go(344.1);
-      setTimeout(() => r({ laurelSprings: a, nc80: desc('MP 344.1') }), 800);
+      setTimeout(() => r({
+        laurelSpringsDrawn: a, nc80Drawn: drawn('MP 344.1')
+      }), 800);
     }, 800));
   });
 
@@ -170,9 +164,64 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     }, 700));
   });
 
+  // The fuel that IS drawn has to separate researched from merely listed. Sampled at an
+  // exit that is actually on the map, not at one of the two that are excluded.
+  await p.evaluate(() => {
+    // A researched exit that does NOT share its Parkway anchor with other pumps. MP 0
+    // Rockfish Gap has thirteen stations on one point, so it is a cluster at every zoom
+    // and proves nothing about how a single fuel pin is drawn.
+    window.__loneFuel = () => {
+      const at = {};
+      BRP.data.fuel.forEach(f => { if (f.parkway_lat != null)
+        at[f.parkway_lat.toFixed(4)] = (at[f.parkway_lat.toFixed(4)] || 0) + 1; });
+      return BRP.data.fuel.find(f => f.plan_grade === 'usable' && f.parkway_lat != null
+                                     && at[f.parkway_lat.toFixed(4)] === 1);
+    };
+  });
+  const fuelFills = await p.evaluate(() => {
+    map0.closePopup();   // bound with keepInView -- it pans the map back under a setView
+    const f = window.__loneFuel();
+    map0.setView([f.parkway_lat, f.parkway_lon], 14);
+    return new Promise(res => setTimeout(() => res(
+      [...document.querySelectorAll('.brp-pin')]
+        .filter(n => (n.getAttribute('title') || '').startsWith('FUEL'))
+        .map(n => n.querySelector('circle').getAttribute('fill'))), 800));
+  });
+
+  // The category rows are switches. Flipping one has to change the map, and survive the
+  // reload -- a filter that forgets itself is worse than no filter.
+  const toggle = await p.evaluate(() => {
+    map0.closePopup();
+    const f = window.__loneFuel();
+    map0.setView([f.parkway_lat, f.parkway_lon], 14);
+    const shapes = n => {
+      const seen = {};
+      [...document.querySelectorAll('.brp-pin')].forEach(x => {
+        const t = x.getAttribute('title') || '';
+        const k = t.startsWith('FUEL') ? 'fuel' : 'place';
+        seen[k] = (seen[k] || 0) + 1;
+      });
+      return seen;
+    };
+    return new Promise(res => setTimeout(() => {
+      const before = shapes();
+      const row = document.querySelector('.key-row[data-shape="fuel"]');
+      row.click();
+      setTimeout(() => {
+        const after = shapes();
+        const off = document.querySelector('.key-row[data-shape="fuel"]');
+        res({ before, after, marked: off.getAttribute('aria-checked'),
+              dimmed: off.classList.contains('off'),
+              faded: parseFloat(getComputedStyle(off).opacity) < 0.9,
+              stored: JSON.parse(localStorage.getItem('brp-trip-v2') || '{}').mapShow });
+      }, 600);
+    }, 800));
+  });
+
   const key = await p.evaluate(() => ({
     heads: [...document.querySelectorAll('.key-head')].map(n => n.textContent),
     rows: document.querySelectorAll('.key-row').length,
+    switches: document.querySelectorAll('.key-row[data-shape]').length,
     swatches: document.querySelectorAll('.key-icon svg').length,
     footer: (document.querySelector('.key-footer') || {}).textContent || '',
     route: LINE.yourRoute.color,
@@ -180,7 +229,7 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
       .filter(n => n.innerHTML.toLowerCase().includes(LINE.yourRoute.color.slice(1))).length
   }));
 
-  console.log(JSON.stringify({ wide, grey, named, stuck, sel, key, errors }));
+  console.log(JSON.stringify({ wide, grey, named, fuelFills, stuck, sel, toggle, key, errors }));
   await b.close();
 })();
 """
@@ -223,17 +272,22 @@ def main():
     # How many markers there should be, from the data rather than from a number typed here.
     with open(os.path.join(ROOT, "data", "derived", "browser-data.json")) as f:
         data = json.load(f)
-    total = len(data["places"]) + len(data["fuel"])
+    drawable = [f for f in data["fuel"]
+                if f["plan_grade"] not in ("unreachable", "do_not_rely") and f.get("stations")]
+    total = len(data["places"]) + len(drawable)
 
     print("the key is drawn by the same code as the markers")
     key = js["key"]
-    check("both teaching headings are present, not 'places' and 'fuel'",
-          key["heads"][:2] == ["WHAT THE SHAPE MEANS", "WHAT THE COLOUR MEANS"],
+    check("the key is grouped by what you can do with it",
+          key["heads"] == ["SHOW ON THE MAP", "HOW MUCH TO TRUST IT", "LINES"],
           str(key["heads"]))
     check("every key row draws a real swatch, none are hand-written",
-          key["rows"] == key["swatches"] and key["rows"] >= 14,
+          key["rows"] == key["swatches"] and key["rows"] >= 13,
           f"{key['rows']} rows, {key['swatches']} swatches")
-    check("the footer states the rule", "Shape tells you" in key["footer"], key["footer"][:60])
+    check("the footer says the rows can be tapped", "Tap a row" in key["footer"],
+          key["footer"][:60])
+    check("exactly the four categories are switches", key["switches"] == 4,
+          str(key["switches"]))
 
     print("\nthe encoding survives being desaturated")
     check("no two key states collapse into each other in greyscale",
@@ -261,16 +315,15 @@ def main():
     check("each fanned marker keeps a line back to where it really is",
           stuck["leaders"] == stuck["count"], json.dumps(stuck))
 
-    print("\nfuel trust reaches the map")
+    print("\nunusable fuel is not on the map at all")
     named = js["named"]
-    # MP 248.1 Laurel Springs is on every official fuel list with no verifiable pump behind
-    # it; MP 344.1 NC 80 sits inside the severed MP 333.9-355.3 section.
-    check("an exit with no station reads as clay, not cream",
-          named["laurelSprings"].get("fill") == "#e0623a"
-          and not named["laurelSprings"].get("struck"), json.dumps(named["laurelSprings"]))
-    check("an exit inside a severed section reads as clay, struck through",
-          named["nc80"].get("fill") == "#e0623a" and named["nc80"].get("struck"),
-          json.dumps(named["nc80"]))
+    check("an exit with no verifiable pump is not drawn",
+          not named["laurelSpringsDrawn"], json.dumps(named))
+    check("an exit inside a severed section is not drawn",
+          not named["nc80Drawn"], json.dumps(named))
+    check("the fuel that is drawn is green when researched, grey when only listed",
+          bool(js["fuelFills"]) and set(js["fuelFills"]) <= {"#35d07f", "#93a8b4"},
+          str(sorted(set(js["fuelFills"]))))
 
     print("\nselection does not lie about trust")
     sel = js["sel"]
@@ -285,6 +338,22 @@ def main():
     check("the planned route is magenta", key["route"].lower() == "#e86ec4", key["route"])
     check("and no marker anywhere is", key["magentaMarkers"] == 0,
           str(key["magentaMarkers"]))
+
+    print("\nthe key doubles as the map's controls")
+    tg = js["toggle"]
+    check("the map has fuel on it to begin with", tg["before"].get("fuel", 0) > 0,
+          json.dumps(tg["before"]))
+    check("tapping the fuel row takes every fuel pin off the map",
+          tg["after"].get("fuel", 0) == 0, json.dumps(tg["after"]))
+    check("and leaves the other shapes alone",
+          tg["after"].get("place", 0) == tg["before"].get("place", 0),
+          json.dumps(tg))
+    check("the row says it is off, for a screen reader too", tg["marked"] == "false",
+          str(tg["marked"]))
+    check("and looks off, which a second class attribute had been silently dropping",
+          tg["dimmed"] and tg["faded"], json.dumps(tg))
+    check("and the choice is remembered", tg["stored"] and tg["stored"]["fuel"] is False,
+          json.dumps(tg["stored"]))
 
     check("the page raised no errors", not js["errors"], str(js["errors"][:3]))
 

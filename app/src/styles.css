@@ -390,6 +390,17 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
 }
 .key-head:first-child { margin-top: 2px; }
 .key-row { display: flex; align-items: center; gap: 9px; padding: 3px 0; }
+/* The category rows are switches, so they have to look pressable and reach the 44px tap
+   target on a phone. A row that is off keeps its swatch -- greyed, not removed -- because
+   the swatch is still what tells you which switch you are about to flip. */
+.key-row[data-shape] {
+  cursor: pointer; border-radius: var(--radius-sm);
+  margin: 0 -6px; padding: 3px 6px;
+}
+.key-row[data-shape]:hover { background: var(--panel-2); }
+.key-row[data-shape]:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+.key-row[data-shape].off { opacity: .42; }
+.key-row[data-shape].off .key-label { text-decoration: line-through; }
 .key-icon { flex: 0 0 30px; display: flex; justify-content: center; align-items: center; }
 .key-icon svg { display: block; }
 .key-label { color: var(--fg); }
@@ -410,6 +421,7 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
   .legend-body { max-height: 18vh; }
   .key-note { display: none; }
   .key-row { padding: 1px 0; }
+  .key-row[data-shape] { padding: 5px 6px; }
   .key-icon { flex-basis: 26px; }
   .key-icon svg { width: 22px; height: 22px; }
   .key-head { margin: 7px 0 2px; }

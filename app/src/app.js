@@ -36,7 +36,10 @@
     googleNote: null,          // what the last Google search found, and what got filtered
     roadStatus: null,          // shown while road legs are being fetched
     tab: 'plan',
-    filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
+    filters: { motoOnly: false, topOnly: false },
+    // Which shapes are drawn. Toggled from the map key, and remembered -- a rider looking
+    // for somewhere to sleep does not want 283 fuel pins in the way, and vice versa.
+    mapShow: { camp: true, moto: true, hotel: true, fuel: true },
     search: '',
     showClosed: true,
     browseKind: 'all',         // Browse filters are independent of the trip being planned
@@ -69,6 +72,7 @@
         // them. pinMode is deliberately NOT saved: a pending map tap should not survive a
         // reload and hijack the next touch.
         legendOpen: state.legendOpen, filters: state.filters,
+        mapShow: state.mapShow,
         browseKind: state.browseKind, browseWithinMi: state.browseWithinMi,
         browseShowers: state.browseShowers, browseToilets: state.browseToilets,
         stayKind: state.stayKind, stayShowers: state.stayShowers,
@@ -1864,22 +1868,26 @@
     top: c.tier === 'top'
   });
 
-  /* Fuel, in the order the checks have to happen.
+  /* Fuel that is worth drawing, and how much to trust it.
    *
-   * Unreachable is decided by the closure model, not by a note: MP 344.1 NC 80 sits inside
-   * the severed MP 333.9-355.3 section, and what says so is plan_grade, not prose.
+   * A pump that is gone, unreliable or cut off by a closure is not drawn at all. It was
+   * red, and then struck through, and the honest question is what a rider was supposed to
+   * do with that at 60mph: it is a marker whose entire content is "not this one". The two
+   * on this map -- MP 248.1 Laurel Springs, on every official fuel list with nothing
+   * verifiable behind it, and MP 344.1 NC 80, inside the severed MP 333.9-355.3 section --
+   * are still in the Browse list with the reason, which is where you would go to find out
+   * why a gap exists. They are already excluded from route planning.
    *
-   * An exit with no stations is `avoid` whatever its confidence claims -- MP 248.1 Laurel
-   * Springs is on every official fuel list and has no verifiable pump behind it.
-   *
-   * Then the trust split. 26 usable and 8 usable-via-detour exits were researched by hand,
-   * so they are cream. The 247 that came back from the Google sweep are real listings that
-   * nobody has ridden to, so they are dashed slate: usable, and visibly a weaker claim.
-   * That distinction is the whole reason the sweep was run separately from the curation. */
+   * What is left splits two ways. The 34 exits researched by hand are green. The 247 the
+   * Google sweep found are real listings nobody has ridden to, so they are grey: usable,
+   * and visibly a weaker claim. That distinction is why the sweep was kept separate from
+   * the curation in the first place.
+   */
+  const FUEL_ON_MAP = f =>
+    f.plan_grade !== 'unreachable' && f.plan_grade !== 'do_not_rely'
+    && !!(f.stations && f.stations.length);
+
   function fuelOpts(f) {
-    if (f.plan_grade === 'unreachable') return { trust: 'avoid', struck: true };
-    if (!f.stations || !f.stations.length) return { trust: 'avoid' };
-    if (f.plan_grade === 'do_not_rely') return { trust: 'avoid' };
     if (f.plan_grade === 'usable_google') return { trust: 'listed' };
     if (f.confidence === 'likely' || f.confidence === 'unverified')
       return { trust: 'listed' };
@@ -1908,11 +1916,27 @@
 
     // Rows come from legendHtml(), which draws its swatches with the same pinSvg() the
     // markers use. Hand-written swatches are how a key goes stale; these physically
-    // cannot. The two section headings are load-bearing -- "what the shape means" and
-    // "what the colour means" are what teach the rule, so they are not retitled back to
-    // "Places to stay" and "Fuel", which is the grouping that caused the confusion.
+    // cannot.
     const body = el('div', 'legend-body');
-    body.innerHTML = legendHtml();
+    body.innerHTML = legendHtml(state.mapShow);
+
+    // The four category rows double as switches. A key that only explains the map is
+    // half a control panel: with 761 markers on one road, being able to drop the fuel
+    // while looking for a campsite is worth more than the explanation is.
+    body.querySelectorAll('[data-shape]').forEach(rowEl => {
+      const kind = rowEl.getAttribute('data-shape');
+      const toggle = () => {
+        state.mapShow[kind] = !state.mapShow[kind];
+        save();
+        drawMarkers();
+        refreshLegend();
+      };
+      rowEl.onclick = toggle;
+      rowEl.onkeydown = e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      };
+    });
+
     body.append(el('div', 'key-footer', LEGEND_FOOTER));
     box.append(body);
     return box;
@@ -1955,32 +1979,31 @@
     if (layers.spider) layers.spider.clearLayers();
     const pins = [];
 
-    if (state.filters.campground) {
-      (D.places || []).forEach(c => {
-        const label = [c.name,
-                       c.mp != null ? `MP ${c.mp.toFixed(1)}` : null,
-                       c.kind === 'hotel' ? 'hotel or motel'
-                         : c.moto ? 'motorcycle camp' : 'campground',
-                       c.off_parkway_mi != null && c.off_parkway_mi >= 0.3
-                         ? `${c.off_parkway_mi} mi off the Parkway` : 'on the Parkway']
-                      .filter(Boolean).join(' · ');
-        pins.push({
-          at: [c.lat, c.lon], label,
-          icon: () => pinIcon(placeKind(c), placeOpts(c)),
-          z: c.tier === 'top' ? 400 : 0,
-          open: () => {
-            state.previewId = c.id;
-            state.tab = 'plan';
-            state.addingStop = true;
-            render();
-            previewOnMap(c);
-          }
-        });
+    (D.places || []).forEach(c => {
+      if (!state.mapShow[placeKind(c)]) return;
+      const label = [c.name,
+                     c.mp != null ? `MP ${c.mp.toFixed(1)}` : null,
+                     c.kind === 'hotel' ? 'hotel or motel'
+                       : c.moto ? 'motorcycle camp' : 'campground',
+                     c.off_parkway_mi != null && c.off_parkway_mi >= 0.3
+                       ? `${c.off_parkway_mi} mi off the Parkway` : 'on the Parkway']
+                    .filter(Boolean).join(' · ');
+      pins.push({
+        at: [c.lat, c.lon], label,
+        icon: () => pinIcon(placeKind(c), placeOpts(c)),
+        z: c.tier === 'top' ? 400 : 0,
+        open: () => {
+          state.previewId = c.id;
+          state.tab = 'plan';
+          state.addingStop = true;
+          render();
+          previewOnMap(c);
+        }
       });
-    }
+    });
 
-    if (state.filters.fuel) {
-      D.fuel.forEach(f => {
+    if (state.mapShow.fuel) {
+      D.fuel.filter(FUEL_ON_MAP).forEach(f => {
         const grade = (f.plan_grade || '').replace(/_/g, ' ');
         const at = f.parkway_lat != null
           ? [f.parkway_lat, f.parkway_lon] : BRP.coordAtMp(f.mp);

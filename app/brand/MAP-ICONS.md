@@ -169,3 +169,51 @@ marker to see the detail; nothing joins your trip until you say so.*
 Glyphs are hand-authored on a 24×24 grid with 1.9px strokes. If you need a new category,
 draw it on that grid at that weight — don't drop in an icon-font glyph, the weights won't
 match and it'll show.
+
+---
+
+## Amendment — colour, switches, and unusable fuel
+
+Three changes made after riding the map, which supersede parts of the spec above. The
+reasoning behind each, so the original argument is not just overwritten:
+
+**1. Category is shape *and* colour.** §2 and Step 8 said category must be shape alone,
+because colour-per-category was the bug. That argument was about a map where colour was
+the *only* channel — amber meaning "top pick" under one heading and "unconfirmed" under
+another, with nothing else to fall back on. Shape carries category now, so colour on top
+is reinforcement, not the sole signal, and a whole Parkway of identical cream discs turned
+out to be genuinely harder to scan than one where campgrounds are green and hotels blue.
+
+| Category | Fill |
+|---|---|
+| Campground | `#2e7d4f` dark green |
+| Motorcycle camp | `#e8833a` orange |
+| Hotel or motel | `#5aa9e6` blue |
+| Fuel, researched | `#35d07f` bright green |
+| Fuel, listed only | `#93a8b4` slate |
+
+Trust keeps a channel of its own and it is still not a hue: **solid ring = researched,
+dashed ring = listed only**. That survives greyscale and colour blindness, which is what
+§2's dashed ring was for. Glyph ink is picked from the fill's luminance rather than fixed,
+so a dark green pin gets cream strokes and a light one gets night blue.
+
+Fuel is the one category whose colour moves with trust, because it is the one where being
+wrong strands somebody. Lodging keeps its colour when unverified — 446 of 478 places came
+from OSM and Google, so greying those would leave a map that is grey nearly everywhere and
+make "blue means hotel" a lie.
+
+**2. The four category rows are switches.** With 761 markers on one road, a key that only
+explains is half a control panel. Tapping a row hides or shows that shape; the choice is
+remembered. This is why the first heading is now "SHOW ON THE MAP" rather than "WHAT THE
+SHAPE MEANS".
+
+**3. Unusable fuel is not drawn at all.** The `avoid` fill and the diagonal strike are
+gone, and with them the two rows that explained them. A marker whose entire content is
+"not this one" is not worth a glance at 60mph. The two on this map — MP 248.1 Laurel
+Springs, on every official fuel list with nothing verifiable behind it, and MP 344.1
+NC 80, inside the severed MP 333.9–355.3 section — are still in the Browse list with the
+reason, and were already excluded from route planning.
+
+Everything else in the spec still holds: no icon fonts, no extra trust levels, no
+recolouring on selection, and the legend and the markers still come out of one function.
+`build/test_markers.py` enforces the lot, including the greyscale check.

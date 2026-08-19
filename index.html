@@ -425,6 +425,17 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
 }
 .key-head:first-child { margin-top: 2px; }
 .key-row { display: flex; align-items: center; gap: 9px; padding: 3px 0; }
+/* The category rows are switches, so they have to look pressable and reach the 44px tap
+   target on a phone. A row that is off keeps its swatch -- greyed, not removed -- because
+   the swatch is still what tells you which switch you are about to flip. */
+.key-row[data-shape] {
+  cursor: pointer; border-radius: var(--radius-sm);
+  margin: 0 -6px; padding: 3px 6px;
+}
+.key-row[data-shape]:hover { background: var(--panel-2); }
+.key-row[data-shape]:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+.key-row[data-shape].off { opacity: .42; }
+.key-row[data-shape].off .key-label { text-decoration: line-through; }
 .key-icon { flex: 0 0 30px; display: flex; justify-content: center; align-items: center; }
 .key-icon svg { display: block; }
 .key-label { color: var(--fg); }
@@ -445,6 +456,7 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
   .legend-body { max-height: 18vh; }
   .key-note { display: none; }
   .key-row { padding: 1px 0; }
+  .key-row[data-shape] { padding: 5px 6px; }
   .key-icon { flex-basis: 26px; }
   .key-icon svg { width: 22px; height: 22px; }
   .key-head { margin: 7px 0 2px; }
@@ -1718,16 +1730,46 @@ const Gpx = (() => {
 })();
 </script>
 <script>/* BRP Moto Camping — map pin system.
-   Shape = what a place is.  Fill = how much to trust it.  Star = top pick.
+   Shape = what a place is.  Colour = what a place is, again.  Ring = how much to trust it.
    Drop-in for Leaflet: L.marker(latlng, { icon: pinIcon('camp', {top:true}) })
+
+   The original of this file made colour mean trust and nothing else, on the argument that
+   a colour-per-category is what made the old key unreadable. That argument was about a map
+   where colour was the ONLY channel: amber meant "top pick" under one heading and
+   "unconfirmed" under another, and a rider with red-green deficiency had nothing else to
+   go on. Shape carries category now, so colour on top of it is reinforcement rather than
+   the sole signal, and a map of identical cream discs is genuinely harder to scan than a
+   map where campgrounds are green and hotels are blue.
+
+   Trust keeps its own channel, and it is deliberately not a hue: a solid ring means
+   somebody checked this place for this planner, a dashed ring means it is listed
+   somewhere and nobody has been. That survives greyscale and colour blindness both.
 */
-const PIN_INK   = "#16344a";  // glyph
-const PIN_NIGHT = "#0e1a22";  // ring / slash
-const FILL = {
-  verified: "#f2efe6",  // cream  — we researched and confirmed it
-  listed:   "#93a8b4",  // slate  — listed somewhere, not verified  (always dashed)
-  avoid:    "#e0623a",  // clay   — do not rely on it / unreachable
+const PIN_NIGHT = "#0e1a22";  // ring, and the ink on light fills
+const PIN_CREAM = "#f2efe6";  // the ink on dark fills
+
+/* Category is the fill. Fuel is the one category that changes colour with trust, because
+   it is the one where being wrong strands somebody: a pump nobody has ridden to goes grey
+   rather than wearing the same green as a verified one. Lodging keeps its colour when
+   unverified -- 446 of 478 places came from OSM and Google, so greying those would leave a
+   map that is grey almost everywhere and would make "blue means hotel" a lie. */
+const CATEGORY = {
+  camp:  { fill: "#2e7d4f", label: "Campground",      note: "tent" },
+  moto:  { fill: "#e8833a", label: "Motorcycle camp", note: "two wheels" },
+  hotel: { fill: "#5aa9e6", label: "Hotel or motel",  note: "a bed" },
+  fuel:  { fill: "#35d07f", label: "Fuel",            note: "a pump" },
 };
+const UNVERIFIED = "#93a8b4";   // slate: listed, not visited
+
+/* Ink that will actually read on the fill it sits on, rather than a colour chosen once and
+   hoped for. Dark green needs cream strokes; the lighter fills need the night blue. */
+function ink(fill) {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(fill.substr(i, 2), 16));
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 130 ? PIN_CREAM : PIN_NIGHT;
+}
+
+/* Hand-drawn on a 24x24 grid at 1.9px. If you need a new category, draw it on that grid at
+   that weight -- an icon-font glyph will have a different stroke weight and it will show. */
 const GLYPH = {
   camp: `<path d="M12 4.2 L21.2 19.4 H2.8 Z"/><path d="M12 11.6 L16.2 19.4 H7.8 Z"/>`,
   moto: `<circle cx="5.1" cy="16.4" r="3.3"/><circle cx="18.9" cy="16.4" r="3.3"/>`
@@ -1738,29 +1780,26 @@ const GLYPH = {
   fuel: `<path d="M4.2 20.4 V5.4 a1.8 1.8 0 0 1 1.8-1.8 H12 a1.8 1.8 0 0 1 1.8 1.8 V20.4"/>`
       + `<path d="M2.8 20.4 H15.2"/><path d="M6.6 7.2 H11.4 V10.6 H6.6 Z"/>`
       + `<path d="M13.8 9.6 H17.4 a1.6 1.6 0 0 1 1.6 1.6 V16.6 a1.5 1.5 0 0 0 3 0 V10.4 L19.4 7.8"/>`,
-  warn: `<path d="M12 3.8 L21.6 20.2 H2.4 Z"/><path d="M12 9.6 V14.6"/>`
-      + `<circle cx="12" cy="17.5" r="1.15"/>`,
 };
 
 /** Build the raw SVG string for a pin.
- *  kind:  'camp' | 'moto' | 'hotel' | 'fuel' | 'warn'
- *  opts:  { trust:'verified'|'listed'|'avoid', top:bool, struck:bool, size:number }
+ *  kind:  'camp' | 'moto' | 'hotel' | 'fuel'
+ *  opts:  { trust:'verified'|'listed', top:bool, size:number }
  */
 function pinSvg(kind, opts = {}) {
-  const { trust = "verified", top = false, struck = false, size = 30 } = opts;
-  const fill = FILL[trust] || FILL.verified;
+  const { trust = "verified", top = false, size = 30 } = opts;
+  const cat = CATEGORY[kind] || CATEGORY.camp;
+  const fill = (kind === "fuel" && trust === "listed") ? UNVERIFIED : cat.fill;
   const dash = trust === "listed" ? ` stroke-dasharray="4.4 3.4"` : ``;
   const ring = `<circle cx="18" cy="18" r="15.9" fill="${fill}" stroke="${PIN_NIGHT}" stroke-width="2.2"${dash}/>`;
-  const slash = struck
-    ? `<path d="M7.6 28.4 L28.4 7.6" stroke="${PIN_NIGHT}" stroke-width="3.4" stroke-linecap="round"/>` : ``;
   const star = top
     ? `<g transform="translate(23.6,-1.2)"><circle cx="7" cy="7" r="8.2" fill="${PIN_NIGHT}"/>`
     + `<path d="M7 2.4 L8.42 5.5 L11.8 5.9 L9.3 8.2 L9.98 11.55 L7 9.88 L4.02 11.55 L4.7 8.2 L2.2 5.9 L5.58 5.5 Z"`
     + ` fill="#f0b44a"/></g>` : ``;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 42 42" width="${size}" height="${size}">`
     + ring
-    + `<g transform="translate(6,6)" fill="none" stroke="${PIN_INK}" stroke-width="1.9" `
-    + `stroke-linecap="round" stroke-linejoin="round">${GLYPH[kind]}</g>${slash}${star}</svg>`;
+    + `<g transform="translate(6,6)" fill="none" stroke="${ink(fill)}" stroke-width="1.9" `
+    + `stroke-linecap="round" stroke-linejoin="round">${GLYPH[kind]}</g>${star}</svg>`;
 }
 
 /** Leaflet divIcon wrapper. Anchor is the ring centre, not the star. */
@@ -1775,7 +1814,7 @@ function pinIcon(kind, opts = {}) {
   });
 }
 
-/* Selected state: don't change the colour (colour is already carrying trust).
+/* Selected state: don't change the colour (colour is already carrying category).
    Scale up and add a halo instead:
      .brp-pin.is-selected svg { transform: scale(1.28); filter: drop-shadow(0 0 6px #f0b44a); }
 */
@@ -1791,23 +1830,23 @@ const LINE = {
 /* ------------------------------------------------------------------ *
  * Legend, generated from the SAME pinSvg() the markers use, so the key
  * can never drift out of sync with what's actually on the map.
- * Usage:  document.querySelector('#map-key').innerHTML = legendHtml();
+ * The four category rows are switches: legendHtml() is given the set
+ * that is currently shown, and marks the rest off.
  * ------------------------------------------------------------------ */
-const LEGEND = [
-  { head: "WHAT THE SHAPE MEANS" },
-  { pin: ["camp"],                        label: "Campground",              note: "tent" },
-  { pin: ["moto"],                        label: "Motorcycle camp",         note: "two wheels" },
-  { pin: ["hotel"],                       label: "Hotel or motel",          note: "a bed" },
-  { pin: ["fuel"],                        label: "Fuel",                    note: "a pump" },
+const SHAPES = ["camp", "moto", "hotel", "fuel"];
 
-  { head: "WHAT THE COLOUR MEANS" },
-  { pin: ["fuel"],                              label: "Cream — researched",        note: "we verified this one" },
-  { pin: ["fuel", {trust:"listed"}],            label: "Grey, dashed — listed only",note: "not verified, don’t count on it" },
-  { pin: ["fuel", {trust:"avoid"}],             label: "Red — do not rely on it",   note: "reported gone or unreliable" },
-  { pin: ["fuel", {trust:"avoid",struck:true}], label: "Red, struck through",       note: "unreachable in 2026" },
-  { pin: ["camp", {top:true}],                  label: "Gold star",                 note: "a top pick — works on any shape" },
+const TRUST_ROWS = [
+  { pin: ["camp"],                    label: "Solid ring — researched",
+    note: "checked for this planner" },
+  { pin: ["hotel", { trust: "listed" }], label: "Dashed ring — listed only",
+    note: "nobody has been, don’t count on it" },
+  { pin: ["fuel", { trust: "listed" }],  label: "Grey pump — unverified",
+    note: "a fuel listing nobody has ridden to" },
+  { pin: ["camp", { top: true }],      label: "Gold star — top pick",
+    note: "works on any shape" },
+];
 
-  { head: "LINES" },
+const LINE_ROWS = [
   { line: LINE.parkwayOpen,   label: "Parkway open",           note: "rideable in 2026" },
   { line: LINE.parkwayClosed, label: "Parkway closed",         note: "Helene damage, roadworks" },
   { line: LINE.yourRoute,     label: "Your route",             note: "the ride as planned" },
@@ -1822,19 +1861,38 @@ function swatchLine(s) {
        + `stroke-linecap="round"${d}/></svg>`;
 }
 
-function legendHtml() {
-  return LEGEND.map(r => {
-    if (r.head) return `<div class="key-head">${r.head}</div>`;
-    const icon = r.pin ? pinSvg(r.pin[0], { size: 26, ...(r.pin[1] || {}) }) : swatchLine(r.line);
-    return `<div class="key-row"><div class="key-icon">${icon}</div>`
-         + `<div class="key-label">${r.label}</div>`
-         + `<div class="key-note">${r.note}</div></div>`;
-  }).join("");
+/* One row. `cls` is folded into the single class attribute rather than appended as a
+   second one -- a tag with two class attributes keeps the first and silently drops the
+   rest, so an "off" row went on looking exactly like an "on" one. */
+function row(icon, label, note, { cls = "", attrs = "" } = {}) {
+  return `<div class="key-row${cls ? " " + cls : ""}"${attrs}>`
+       + `<div class="key-icon">${icon}</div>`
+       + `<div class="key-label">${label}</div>`
+       + `<div class="key-note">${note}</div></div>`;
+}
+
+/** show: { camp:bool, moto:bool, hotel:bool, fuel:bool } -- which shapes are on the map. */
+function legendHtml(show = {}) {
+  let html = `<div class="key-head">SHOW ON THE MAP</div>`;
+  SHAPES.forEach(k => {
+    const on = show[k] !== false;
+    html += row(pinSvg(k, { size: 26 }), CATEGORY[k].label, CATEGORY[k].note, {
+      cls: on ? "" : "off",
+      attrs: ` data-shape="${k}" role="switch" tabindex="0" aria-checked="${on}"`
+    });
+  });
+  html += `<div class="key-head">HOW MUCH TO TRUST IT</div>`;
+  TRUST_ROWS.forEach(r => html += row(pinSvg(r.pin[0], { size: 26, ...(r.pin[1] || {}) }),
+                                      r.label, r.note));
+  html += `<div class="key-head">LINES</div>`;
+  LINE_ROWS.forEach(r => html += row(swatchLine(r.line), r.label, r.note));
+  return html;
 }
 
 const LEGEND_FOOTER =
-  "Shape tells you what a place is. Colour tells you how much to trust it. " +
-  "Tap any marker to see the detail; nothing joins your trip until you say so.";
+  "Tap a row above to hide or show that kind of marker. Fuel stops that are gone, " +
+  "unreliable or cut off by a closure are never drawn — they are still listed under " +
+  "Browse, so you can see why.";
 </script>
 <script>/* UI: trip state, rendering, map. Everything routing- or GPX-related lives in
  * route.js / gpx.js, which mirror the Python reference implementation under build/.
@@ -1874,7 +1932,10 @@ const LEGEND_FOOTER =
     googleNote: null,          // what the last Google search found, and what got filtered
     roadStatus: null,          // shown while road legs are being fetched
     tab: 'plan',
-    filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
+    filters: { motoOnly: false, topOnly: false },
+    // Which shapes are drawn. Toggled from the map key, and remembered -- a rider looking
+    // for somewhere to sleep does not want 283 fuel pins in the way, and vice versa.
+    mapShow: { camp: true, moto: true, hotel: true, fuel: true },
     search: '',
     showClosed: true,
     browseKind: 'all',         // Browse filters are independent of the trip being planned
@@ -1907,6 +1968,7 @@ const LEGEND_FOOTER =
         // them. pinMode is deliberately NOT saved: a pending map tap should not survive a
         // reload and hijack the next touch.
         legendOpen: state.legendOpen, filters: state.filters,
+        mapShow: state.mapShow,
         browseKind: state.browseKind, browseWithinMi: state.browseWithinMi,
         browseShowers: state.browseShowers, browseToilets: state.browseToilets,
         stayKind: state.stayKind, stayShowers: state.stayShowers,
@@ -3702,22 +3764,26 @@ const LEGEND_FOOTER =
     top: c.tier === 'top'
   });
 
-  /* Fuel, in the order the checks have to happen.
+  /* Fuel that is worth drawing, and how much to trust it.
    *
-   * Unreachable is decided by the closure model, not by a note: MP 344.1 NC 80 sits inside
-   * the severed MP 333.9-355.3 section, and what says so is plan_grade, not prose.
+   * A pump that is gone, unreliable or cut off by a closure is not drawn at all. It was
+   * red, and then struck through, and the honest question is what a rider was supposed to
+   * do with that at 60mph: it is a marker whose entire content is "not this one". The two
+   * on this map -- MP 248.1 Laurel Springs, on every official fuel list with nothing
+   * verifiable behind it, and MP 344.1 NC 80, inside the severed MP 333.9-355.3 section --
+   * are still in the Browse list with the reason, which is where you would go to find out
+   * why a gap exists. They are already excluded from route planning.
    *
-   * An exit with no stations is `avoid` whatever its confidence claims -- MP 248.1 Laurel
-   * Springs is on every official fuel list and has no verifiable pump behind it.
-   *
-   * Then the trust split. 26 usable and 8 usable-via-detour exits were researched by hand,
-   * so they are cream. The 247 that came back from the Google sweep are real listings that
-   * nobody has ridden to, so they are dashed slate: usable, and visibly a weaker claim.
-   * That distinction is the whole reason the sweep was run separately from the curation. */
+   * What is left splits two ways. The 34 exits researched by hand are green. The 247 the
+   * Google sweep found are real listings nobody has ridden to, so they are grey: usable,
+   * and visibly a weaker claim. That distinction is why the sweep was kept separate from
+   * the curation in the first place.
+   */
+  const FUEL_ON_MAP = f =>
+    f.plan_grade !== 'unreachable' && f.plan_grade !== 'do_not_rely'
+    && !!(f.stations && f.stations.length);
+
   function fuelOpts(f) {
-    if (f.plan_grade === 'unreachable') return { trust: 'avoid', struck: true };
-    if (!f.stations || !f.stations.length) return { trust: 'avoid' };
-    if (f.plan_grade === 'do_not_rely') return { trust: 'avoid' };
     if (f.plan_grade === 'usable_google') return { trust: 'listed' };
     if (f.confidence === 'likely' || f.confidence === 'unverified')
       return { trust: 'listed' };
@@ -3746,11 +3812,27 @@ const LEGEND_FOOTER =
 
     // Rows come from legendHtml(), which draws its swatches with the same pinSvg() the
     // markers use. Hand-written swatches are how a key goes stale; these physically
-    // cannot. The two section headings are load-bearing -- "what the shape means" and
-    // "what the colour means" are what teach the rule, so they are not retitled back to
-    // "Places to stay" and "Fuel", which is the grouping that caused the confusion.
+    // cannot.
     const body = el('div', 'legend-body');
-    body.innerHTML = legendHtml();
+    body.innerHTML = legendHtml(state.mapShow);
+
+    // The four category rows double as switches. A key that only explains the map is
+    // half a control panel: with 761 markers on one road, being able to drop the fuel
+    // while looking for a campsite is worth more than the explanation is.
+    body.querySelectorAll('[data-shape]').forEach(rowEl => {
+      const kind = rowEl.getAttribute('data-shape');
+      const toggle = () => {
+        state.mapShow[kind] = !state.mapShow[kind];
+        save();
+        drawMarkers();
+        refreshLegend();
+      };
+      rowEl.onclick = toggle;
+      rowEl.onkeydown = e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      };
+    });
+
     body.append(el('div', 'key-footer', LEGEND_FOOTER));
     box.append(body);
     return box;
@@ -3793,32 +3875,31 @@ const LEGEND_FOOTER =
     if (layers.spider) layers.spider.clearLayers();
     const pins = [];
 
-    if (state.filters.campground) {
-      (D.places || []).forEach(c => {
-        const label = [c.name,
-                       c.mp != null ? `MP ${c.mp.toFixed(1)}` : null,
-                       c.kind === 'hotel' ? 'hotel or motel'
-                         : c.moto ? 'motorcycle camp' : 'campground',
-                       c.off_parkway_mi != null && c.off_parkway_mi >= 0.3
-                         ? `${c.off_parkway_mi} mi off the Parkway` : 'on the Parkway']
-                      .filter(Boolean).join(' · ');
-        pins.push({
-          at: [c.lat, c.lon], label,
-          icon: () => pinIcon(placeKind(c), placeOpts(c)),
-          z: c.tier === 'top' ? 400 : 0,
-          open: () => {
-            state.previewId = c.id;
-            state.tab = 'plan';
-            state.addingStop = true;
-            render();
-            previewOnMap(c);
-          }
-        });
+    (D.places || []).forEach(c => {
+      if (!state.mapShow[placeKind(c)]) return;
+      const label = [c.name,
+                     c.mp != null ? `MP ${c.mp.toFixed(1)}` : null,
+                     c.kind === 'hotel' ? 'hotel or motel'
+                       : c.moto ? 'motorcycle camp' : 'campground',
+                     c.off_parkway_mi != null && c.off_parkway_mi >= 0.3
+                       ? `${c.off_parkway_mi} mi off the Parkway` : 'on the Parkway']
+                    .filter(Boolean).join(' · ');
+      pins.push({
+        at: [c.lat, c.lon], label,
+        icon: () => pinIcon(placeKind(c), placeOpts(c)),
+        z: c.tier === 'top' ? 400 : 0,
+        open: () => {
+          state.previewId = c.id;
+          state.tab = 'plan';
+          state.addingStop = true;
+          render();
+          previewOnMap(c);
+        }
       });
-    }
+    });
 
-    if (state.filters.fuel) {
-      D.fuel.forEach(f => {
+    if (state.mapShow.fuel) {
+      D.fuel.filter(FUEL_ON_MAP).forEach(f => {
         const grade = (f.plan_grade || '').replace(/_/g, ' ');
         const at = f.parkway_lat != null
           ? [f.parkway_lat, f.parkway_lon] : BRP.coordAtMp(f.mp);
