@@ -79,20 +79,39 @@ def best_access_points(model, net, junctions, start, dest_mp, top_n=3, mode="soo
     if dest_seg is None:
         raise ValueError(f"MP {dest_mp} is not on open Parkway in 2026")
 
-    ranked = []
+    measured = []
     for p in access_points(model, net, junctions):
-        # An access point in another component cannot reach the destination on the Parkway
-        # at all -- the Helene closures severed it into three pieces.
-        if p["component"] != dest_seg.component:
-            continue
         approach = approach_mi(start, (p["lat"], p["lon"]))
         parkway = abs(dest_mp - p["mp"])
-        ranked.append({**p, "approach_mi": round(approach, 1),
-                       "parkway_mi": round(parkway, 1),
-                       "total_mi": round(approach + parkway, 1)})
+        measured.append({**p, "approach_mi": round(approach, 1),
+                         "parkway_mi": round(parkway, 1),
+                         "total_mi": round(approach + parkway, 1)})
+
     key = (lambda r: (r["approach_mi"], r["total_mi"])) if mode == "soonest" \
         else (lambda r: r["total_mi"])
-    ranked.sort(key=key)
+    # An access point in another component cannot reach the destination on the Parkway at
+    # all -- the Helene closures severed it into three pieces.
+    ranked = sorted((p for p in measured if p["component"] == dest_seg.component), key=key)
+    if not ranked:
+        return []
+
+    # Why not the nearest entrance of all?
+    #
+    # From Knoxville, Cherokee is 64 road miles away and Linville Falls is 150. For a stop
+    # north of the break the planner has to send the rider on the 150 mile approach, because
+    # the south end cannot reach that stop on the Parkway at any distance. That is correct
+    # and it looks broken, so the nearer-but-severed entrance travels with the answer and
+    # the plan can say so. A rider told the Parkway is severed can move the stop; a rider
+    # shown an unexplained 150 mile ride just stops trusting the planner.
+    nearer = sorted((p for p in measured
+                     if p["component"] != dest_seg.component
+                     and p["approach_mi"] < ranked[0]["approach_mi"]),
+                    key=lambda r: r["approach_mi"])
+    ranked[0]["severed_alternative"] = {
+        "mp": nearer[0]["mp"], "name": nearer[0]["name"],
+        "approach_mi": nearer[0]["approach_mi"],
+        "saved_mi": round(ranked[0]["approach_mi"] - nearer[0]["approach_mi"], 1),
+    } if nearer else None
     return ranked[:top_n]
 
 
