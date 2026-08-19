@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
-"""Inline v2/src/* into a single self-contained v2/index.html.
+"""Inline v2/src/* into the deployed index.html at the repo root.
 
-The deploy stays one static file with no build step, which is what keeps the planner
-working from a phone in a parking lot with no signal. This generator runs offline, in the
-repo, the way v1/build.py did -- source stays editable, the artifact stays deployable.
+The deploy is one static file with no build step, which is what keeps the planner working
+from a phone in a parking lot with no signal. This generator runs offline, in the repo --
+source stays editable under v2/src/, the artifact stays deployable.
+
+The output is the repo-root index.html, which is what Vercel serves at /. There is
+deliberately no second copy under v2/: two generated artifacts drift, and only one of
+them is ever the thing that deployed.
+
+v1 is no longer part of the build. Its self-contained page remains at v1/index.html and
+stays reachable at /v1/, but nothing here depends on it.
 
 Run: python3 build/build_v2.py
 """
@@ -12,7 +19,7 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "v2", "src")
-OUT = os.path.join(ROOT, "v2", "index.html")
+OUT = os.path.join(ROOT, "index.html")
 
 
 def read(path):
@@ -27,9 +34,9 @@ def main():
 
     html = read(os.path.join(SRC, "shell.html"))
     for token, path in [
-        ("__LEAFLET_CSS__", os.path.join(ROOT, "v1", "leaflet.css")),
+        ("__LEAFLET_CSS__", os.path.join(SRC, "..", "vendor", "leaflet.css")),
         ("__APP_CSS__", os.path.join(SRC, "styles.css")),
-        ("__LEAFLET_JS__", os.path.join(ROOT, "v1", "leaflet.js")),
+        ("__LEAFLET_JS__", os.path.join(SRC, "..", "vendor", "leaflet.js")),
         ("__CORE_JS__", os.path.join(SRC, "core.js")),
         ("__ROUTE_JS__", os.path.join(SRC, "route.js")),
         ("__GPX_JS__", os.path.join(SRC, "gpx.js")),
@@ -42,7 +49,7 @@ def main():
         f.write(html)
 
     size = os.path.getsize(OUT)
-    print(f"v2/index.html  {size/1024:.0f} KB")
+    print(f"index.html (deployed)  {size/1024:.0f} KB")
     for token in ("__LEAFLET_CSS__", "__APP_CSS__", "__LEAFLET_JS__", "__DATA__",
                   "__CORE_JS__", "__ROUTE_JS__", "__GPX_JS__", "__APP_JS__"):
         assert token not in html, f"unsubstituted token {token}"

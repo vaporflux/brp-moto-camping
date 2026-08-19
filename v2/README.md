@@ -1,11 +1,15 @@
 # v2 — the trip planner
 
-`v2/index.html` is **generated**. Edit the files in `v2/src/`, then rebuild:
+**This is what deploys.** The repo-root `index.html` is **generated** from this folder.
+Edit the files in `v2/src/`, then rebuild:
 
 ```
 python3 build/derive.py     # only when data/ changes — rebuilds the data bundle
-python3 build/build_v2.py   # inlines src/ + leaflet + data -> v2/index.html
+python3 build/build_v2.py   # inlines src/ + vendor/ + data -> /index.html
 ```
+
+There is deliberately no second copy of the built page under `v2/`. Two generated
+artifacts drift, and only one of them is ever the thing that deployed.
 
 The deploy stays one static file with no build step, which is what keeps it working from
 a phone in a parking lot with no signal. The generator runs offline, in the repo, the way
@@ -21,6 +25,7 @@ a phone in a parking lot with no signal. The generator runs offline, in the repo
 | `src/core.js` | Geometry, milepost lookup, reachability | Rarely — mirrors `build/brp/` |
 | `src/route.js` | Route slicing, point placement, budgets | Rarely — mirrors `build/brp/route.py` |
 | `src/gpx.js` | GPX export + in-page validation | Rarely — mirrors `build/brp/gpx.py` |
+| `vendor/leaflet.*` | Leaflet 1.9.4, inlined at build | Upgrading Leaflet |
 
 **For UI work you almost certainly want `styles.css` and `app.js` only.** The other three
 are ports of the Python under `build/`, which is the reference implementation and carries
@@ -66,5 +71,10 @@ id="pane-x">`, a `renderX()`, and a line in `render()`.
 
 ## Deploy
 
-Not wired up. `v1` is still what deploys, as `index.html` at the repo root. Promoting v2
-means copying `v2/index.html` over the root — ask first, it replaces the live site.
+Push to `main`. Vercel serves the repo-root `index.html`, which `build/build_v2.py`
+generates from this folder — no build step runs on Vercel, so **the rebuilt `index.html`
+has to be committed** alongside any `v2/src/` change. If you edit source and forget to
+rebuild, the site will not change.
+
+`v1/index.html` is untouched and still reachable at `/v1/` as a fallback. Nothing in the
+build depends on it any more — Leaflet now lives in `v2/vendor/`.
