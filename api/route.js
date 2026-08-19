@@ -13,6 +13,9 @@
  * api/places.js. Set GOOGLE_MAPS_API_KEY (or reuse GOOGLE_PLACES_API_KEY) in the Vercel
  * project environment variables and enable the Directions API on it.
  *
+ * Smoke test after deploying:
+ *   https://<your-app>.vercel.app/api/route?olat=35.22&olon=-80.84&dlat=35.59&dlon=-82.55
+ *
  * If no key is configured this returns 503 and the page falls back to a straight-line
  * estimate, clearly labelled as one. Routing is an enhancement, not a dependency: a
  * planned trip is cached with its geometry, so the ride works with no signal afterwards.
@@ -56,8 +59,8 @@ export default async function handler(req, res) {
   if (!key) {
     return res.status(503).json({
       error: 'Road routing is not configured for this deployment.',
-      hint: 'Set GOOGLE_MAPS_API_KEY in the Vercel project environment variables and '
-          + 'enable the Directions API on that key.'
+      hint: 'Set GOOGLE_MAPS_API_KEY (or GOOGLE_PLACES_API_KEY) in the Vercel project '
+          + 'environment variables, with the Directions API enabled on that key.'
     });
   }
 

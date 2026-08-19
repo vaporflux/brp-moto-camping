@@ -1,5 +1,9 @@
 /* Google Places lookup, server-side so the API key stays secret.
  *
+ * Smoke test after deploying:
+ *   https://<your-app>.vercel.app/api/places?lat=35.59&lon=-82.55&type=lodging
+ * A 503 means the key is not set; a 200 with a places array means it is working.
+ *
  * This is the ONLY server-side code in the project, and it exists for one reason: a Vercel
  * environment variable is only a secret if the code reading it runs on Vercel. A static
  * page's JavaScript cannot read one, and inlining it at build time puts it in the page
@@ -17,11 +21,15 @@ const ALLOWED_TYPES = new Set(['campground', 'rv_park', 'lodging', 'gas_station'
 const MAX_RADIUS_M = 40000;      // ~25 mi, the same corridor the OSM pull uses
 
 export default async function handler(req, res) {
-  const key = process.env.GOOGLE_PLACES_API_KEY;
+  // Either name works, so one variable covers both this and api/route.js. They read the
+  // same pair deliberately: setting only one of two differently-named vars half-configured
+  // the app and failed in a way that looked like a Google problem.
+  const key = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
   if (!key) {
     return res.status(503).json({
       error: 'Google Places is not configured for this deployment.',
-      hint: 'Set GOOGLE_PLACES_API_KEY in the Vercel project environment variables.'
+      hint: 'Set GOOGLE_MAPS_API_KEY (or GOOGLE_PLACES_API_KEY) in the Vercel project '
+          + 'environment variables, with the Places API (New) enabled on that key.'
     });
   }
 
