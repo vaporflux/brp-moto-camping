@@ -41,15 +41,20 @@ ENDPOINTS = [
     "https://overpass.osm.ch/api/interpreter",
 ]
 
-# BRP is OSM relation 55450. Querying "around" its ways is far cheaper and far more precise
-# than a bounding box, which would drag in every hotel in Roanoke, Asheville and Charlotte.
+# A bounding box around the centerline, not a buffer around it.
+#
+# The obvious query is `around` on the ways of relation 55450, and it is more precise -- but
+# a 25 mi buffer over 2,689 centerline points needs more than 2 GB and Overpass kills it:
+#   "runtime error: Query run out of memory using about 2048 MB of RAM."
+# A tag-filtered bounding box is indexed and cheap. It drags in every hotel in Roanoke,
+# Knoxville and Charlotte as well, but that costs nothing here: main() measures each result
+# against the real centerline and drops whatever falls outside --radius. The precision comes
+# from that check, so it does not have to come from Overpass.
 QUERY = """
 [out:json][timeout:{timeout}];
-rel({relation});
-way(r)->.pw;
 (
-  node(around.pw:{metres})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
-  way(around.pw:{metres})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
+  node({s},{w},{n},{e})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
+  way({s},{w},{n},{e})["tourism"~"^(camp_site|caravan_site|hotel|motel|hostel)$"];
 );
 out center tags;
 """
@@ -78,8 +83,23 @@ def tri(tags, key):
     return None
 
 
-def fetch(relation, metres, timeout):
-    body = QUERY.format(relation=relation, metres=metres, timeout=timeout)
+def bbox(model, radius_mi):
+    """The centerline's extent, padded by the search radius.
+
+    Latitude is ~69 mi per degree everywhere; longitude shrinks with latitude, so the
+    padding uses the widest (lowest-latitude) row to stay generous rather than clip.
+    """
+    lats = [p[0] for p in model.pts]
+    lons = [p[1] for p in model.pts]
+    pad_lat = radius_mi / 69.0
+    pad_lon = radius_mi / (69.0 * math.cos(math.radians(max(abs(min(lats)), abs(max(lats))))))
+    return (min(lats) - pad_lat, min(lons) - pad_lon,
+            max(lats) + pad_lat, max(lons) + pad_lon)
+
+
+def fetch(box, timeout):
+    body = QUERY.format(s=f"{box[0]:.4f}", w=f"{box[1]:.4f}",
+                        n=f"{box[2]:.4f}", e=f"{box[3]:.4f}", timeout=timeout)
     data = urllib.parse.urlencode({"data": body}).encode()
     last = None
     for url in ENDPOINTS:
@@ -115,20 +135,31 @@ def main():
                          "three-state amenity handling are identical either way.")
     args = ap.parse_args()
 
-    metres = int(args.radius * 1609.344)
+    model, _ = M.load(DATA)
+
     if args.raw:
         print(f"Reading a saved Overpass response from {args.raw}…")
         with open(args.raw) as f:
             payload = json.load(f)
     else:
+        box = bbox(model, args.radius)
         print(f"Fetching camp sites and lodging within {args.radius} mi of the Parkway…")
-        payload = fetch(args.relation, metres, args.timeout)
+        print(f"  bounding box {box[0]:.3f},{box[1]:.3f} to {box[2]:.3f},{box[3]:.3f}")
+        payload = fetch(box, args.timeout)
+
+    # Overpass reports a failed query as HTTP 200 with an empty element list and a remark.
+    # Treating that as "no results" would quietly write an empty file, so name it instead.
+    remark = (payload.get("remark") or "").strip()
     elements = payload.get("elements", [])
+    if remark and not elements:
+        raise SystemExit(
+            f"Overpass refused the query: {remark}\n"
+            "Nothing was written. If this is a memory error, lower --radius and retry.")
     print(f"  {len(elements)} raw elements")
+    if remark:
+        print(f"  NOTE: Overpass also said: {remark}")
     if not elements:
         raise SystemExit("Overpass returned nothing. Not overwriting the existing file.")
-
-    model, _ = M.load(DATA)
 
     places, skipped = [], 0
     for e in elements:
