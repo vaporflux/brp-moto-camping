@@ -17,6 +17,7 @@ Run: python3 build/build_app.py
 """
 import json
 import os
+import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "app", "src")
@@ -28,12 +29,32 @@ def read(path):
         return f.read()
 
 
+def check_js(paths):
+    """Refuse to build a page whose JavaScript does not parse.
+
+    Inlining is a string replace, so a syntax error in a source file used to ship in
+    silence -- the build printed success, every Python test still passed, and the page
+    was dead in the browser. Node parses it here instead, before anything is written.
+    Skipped, loudly, if node is absent.
+    """
+    import shutil
+    if not shutil.which("node"):
+        print("  WARNING: node not found -- JavaScript not syntax-checked")
+        return
+    for path in paths:
+        r = subprocess.run(["node", "--check", path], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit(f"{os.path.basename(path)} does not parse:\n{r.stderr.strip()}")
+    print(f"  {len(paths)} JavaScript files parse")
+
+
 def main():
     data = read(os.path.join(ROOT, "data", "derived", "browser-data.json"))
     # </script> inside a JSON string literal would close the tag early.
     data = data.replace("</", "<\\/")
 
     html = read(os.path.join(SRC, "shell.html"))
+    check_js([os.path.join(SRC, n) for n in ("core.js", "route.js", "gpx.js", "app.js")])
     for token, path in [
         ("__LEAFLET_CSS__", os.path.join(SRC, "..", "vendor", "leaflet.css")),
         ("__APP_CSS__", os.path.join(SRC, "styles.css")),
