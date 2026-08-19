@@ -67,18 +67,32 @@ MAX_MATCH_MI = 1.0
 # How alike the names must read once the boilerplate is stripped.
 MIN_NAME_RATIO = 0.62
 
-# Words that carry no identifying weight. "Sherando Lake Campground" and "Sherando Lake
-# Rec Area" are the same place; "Fancy Gap KOA" and "Floyd KOA" are not, and dropping the
-# brand word is what makes the second pair score apart instead of together.
+# Category words, stripped only for a LAST-RESORT comparison -- never from the primary one.
+#
+# Stripping these from the names themselves was a real bug, and an instructive one. "Days
+# Inn" lost its "Inn" and became "days", which scored 0.27 against "Days Inn by Wyndham
+# Waynesboro" standing ten metres away, so a certain match was thrown out. "Holiday Inn
+# Express & Suites" collapsed to "express" and "Girl Scout Camp" to "girl scout", both of
+# which then matched anything nearby that shared a common word.
+#
+# The lesson: these words are only noise when they are ALSO the whole category. In "Days
+# Inn" and "Holiday Inn" the word IS the brand. So the primary comparison keeps every word,
+# and this stripped form is consulted only when the full comparison has already failed --
+# where it earns its keep on pairs like "Rec Area" against "Recreation Area".
 NOISE = re.compile(
     r"\b(campground|camping|campsite|camp|rv|park|resort|holiday|journey|hotel|motel|inn|"
     r"lodge|lodging|hostel|cabins?|cottages?|suites|the|at|of|and|&)\b", re.I)
 
 
 def norm(name):
-    s = NOISE.sub(" ", (name or "").lower())
-    s = re.sub(r"[^a-z0-9 ]+", " ", s)
+    """Punctuation and case only. Every word survives."""
+    s = re.sub(r"[^a-z0-9 ]+", " ", (name or "").lower())
     return re.sub(r"\s+", " ", s).strip()
+
+
+def core(name):
+    """Category words removed. Only ever a fallback -- see NOISE."""
+    return re.sub(r"\s+", " ", NOISE.sub(" ", norm(name))).strip()
 
 
 def name_ratio(a, b):
@@ -106,13 +120,18 @@ def name_ratio(a, b):
     na, nb = norm(a), norm(b)
     if not na or not nb:
         return 0.0
-    if len(na) >= 5 and (na in nb or nb in na):
-        return 1.0
-    ta, tb = set(na.split()), set(nb.split())
-    short, long_ = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+    sa, sb = set(na.split()), set(nb.split())
+    short, long_ = (sa, sb) if len(sa) <= len(sb) else (sb, sa)
     if len(short) >= 2 and short <= long_:
         return 1.0
-    return difflib.SequenceMatcher(None, na, nb).ratio()
+    shorter = min(na, nb, key=len)
+    if len(shorter) >= 8 and (na in nb or nb in na):
+        return 1.0
+    best = difflib.SequenceMatcher(None, na, nb).ratio()
+    ca, cb = core(a), core(b)
+    if len(ca) >= 5 and len(cb) >= 5:
+        best = max(best, difflib.SequenceMatcher(None, ca, cb).ratio())
+    return best
 
 
 def miles(lat1, lon1, lat2, lon2):
@@ -183,7 +202,11 @@ def best_match(place, results):
     # might belong to the other. Unmatched is the honest answer.
     if len(ok) > 1:
         (d0, r0, n0, _), (d1, r1, n1, _) = ok[0], ok[1]
-        if abs(r0 - r1) < 0.08 and abs(d0 - d1) < 0.25 and norm(n0) != norm(n1):
+        # Equidistant is the test, not merely close. Two listings for "Holiday Inn Express
+        # & Suites" at 0.01 mi and 0.17 mi are not a coin toss -- one is seventeen times
+        # nearer, and that is the answer. A tie is when neither is decisively nearer.
+        contested = d1 < d0 * 3 + 0.05
+        if abs(r0 - r1) < 0.08 and contested and norm(n0) != norm(n1):
             return None, (f"ambiguous: {n0!r} ({d0:.2f} mi, {r0:.2f}) and "
                           f"{n1!r} ({d1:.2f} mi, {r1:.2f}) are equally plausible")
 
