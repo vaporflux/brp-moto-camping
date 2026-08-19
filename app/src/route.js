@@ -731,5 +731,9 @@ const Directions = (() => {
     return val;
   }
 
-  return { fetchLeg, seed, dump, peek, key };
+  // A failure is cached so a dead endpoint is not hammered on every render. Retrying
+  // therefore has to clear it first.
+  const forget = (a, b) => cache.delete(key(a, b));
+
+  return { fetchLeg, seed, dump, peek, key, forget };
 })();
