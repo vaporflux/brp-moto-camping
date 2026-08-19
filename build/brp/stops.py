@@ -166,10 +166,16 @@ def _fuel_grade(rec):
         return "unconfirmed"
     if rec["access_class"] == ACCESS_VIA_DETOUR:
         return "usable_via_detour"
+    # A pump Google lists and nobody has stood in front of. Good enough to plan around --
+    # Google is right about filling stations far more often than not, and 225 of these cut
+    # the worst fuel gap from 49.5 mi to 35.8 -- but it is not the same claim as a
+    # researched entry, and a rider betting a tank deserves to see which one they have.
+    if rec["confidence"] == "google":
+        return "usable_google"
     return "usable"
 
 
-USABLE_GRADES = ("usable", "usable_via_detour", "unconfirmed")
+USABLE_GRADES = ("usable", "usable_via_detour", "unconfirmed", "usable_google")
 
 
 def fuel_gaps(fuel, net, component=None, max_detour_mi=None):
@@ -256,3 +262,61 @@ def as_route_stop(rec, kind=None, name=None, use_station=True):
             "comment": f"MP {rec['mp']} - {rec.get('price', '')}".strip(" -"),
             "off_parkway_mi": rec.get("off_parkway_mi", 0.0),
             "reachable_from_parkway": rec.get("reachable_from_parkway", True)}
+
+
+def discovered_fuel(model, report):
+    """Google-found pumps, shaped like fuel.json records so they go through build_fuel().
+
+    build/verify_fuel.py searches around each known exit and reports what Google has that
+    we do not. Those finds arrive attached to the exit that happened to surface them, which
+    is an artefact of how the search was run and not where the pump is -- a station found
+    "at exit MP 384.7" can sit nearer MP 382. So each one is re-anchored to its own nearest
+    milepost and becomes its own access point.
+
+    Adjacent exits return the same station, so the Google place id decides identity.
+
+    Everything here carries confidence "google" and nothing is promoted. The detour is
+    computed by build_fuel from the coordinates, exactly as it is for every other record,
+    so these are measured the same way rather than on a private scale.
+    """
+    seen, out = set(), []
+    for ex in report.get("exits", []):
+        for g in ex.get("discovered", []):
+            gid = g.get("google_id")
+            if not gid or gid in seen:
+                continue
+            if g.get("lat") is None or g.get("lon") is None:
+                continue
+            if g.get("status") not in (None, "OPERATIONAL"):
+                continue
+            seen.add(gid)
+            i, _ = geo.nearest_vertex(model.pts, g["lat"], g["lon"])
+            out.append({
+                "mp": round(model.mp_at_index(i), 2),
+                "state": None,
+                "exit_road": g.get("name") or "Google-listed fuel",
+                "town": (g.get("address") or "").split(",")[1].strip()
+                        if (g.get("address") or "").count(",") >= 1 else g.get("address"),
+                "published_distance": None,
+                "confidence": "google",
+                "google_id": gid,
+                "found_near_exit_mp": ex.get("mp"),
+                "stations": [{
+                    "name": g.get("name"), "brand": None,
+                    "hours": " / ".join(g.get("hours") or []) or "",
+                    "lat": g["lat"], "lon": g["lon"],
+                    "phone": g.get("phone"), "rating": g.get("rating"),
+                    "ratings": g.get("ratings"), "google_id": gid,
+                }],
+            })
+    return out
+
+
+def load_verification(data_dir):
+    import json as _json
+    import os as _os
+    path = _os.path.join(data_dir, "fuel_verification.json")
+    if not _os.path.exists(path):
+        return None
+    with open(path) as f:
+        return _json.load(f)

@@ -152,6 +152,26 @@ def search(key, centre, radius_mi, timeout=30):
         return json.loads(r.read().decode("utf-8"))
 
 
+def _relift(simple):
+    """Turn a stored, simplified place back into the Google shape reconcile() expects.
+
+    The report keeps places flattened for readability. --tighten needs to feed the earlier
+    pass's finds back through the same matcher as the new ones, and one shared code path
+    beats two that can disagree.
+    """
+    return {
+        "id": simple.get("google_id"),
+        "displayName": {"text": simple.get("name") or ""},
+        "location": {"latitude": simple.get("lat"), "longitude": simple.get("lon")},
+        "formattedAddress": simple.get("address"),
+        "nationalPhoneNumber": simple.get("phone"),
+        "businessStatus": simple.get("status"),
+        "rating": simple.get("rating"), "userRatingCount": simple.get("ratings"),
+        "regularOpeningHours": ({"weekdayDescriptions": simple["hours"]}
+                                if simple.get("hours") else None),
+    }
+
+
 def simplify(g):
     loc = g.get("location") or {}
     return {
@@ -233,6 +253,9 @@ def main():
     ap.add_argument("--limit", type=int, help="stop after this many NEW exits")
     ap.add_argument("--sleep", type=float, default=0.15)
     ap.add_argument("--redo", action="store_true", help="ignore the checkpoint")
+    ap.add_argument("--tighten", action="store_true",
+                    help="re-search only the exits whose first pass hit Google's "
+                         "20-result cap, at half the radius, and merge the findings in")
     args = ap.parse_args()
 
     key = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
@@ -245,7 +268,27 @@ def main():
         fuel = json.load(f)
     model, _ = M.load(DATA)
     done = {} if args.redo else load_checkpoint()
-    todo = [f for f in fuel if str(f["mp"]) not in done]
+
+    if args.tighten:
+        # A capped exit told us nothing about what it did NOT return.
+        #
+        # Nearby Search stops at 20 results. Eight exits hit that ceiling, which means two
+        # things at once: the discovery count there is a floor rather than a total, and a
+        # station of ours that came back "unconfirmed" may simply have been crowded out by
+        # nineteen others Google ranked higher. Absence of evidence, from a truncated list,
+        # is not evidence of absence.
+        #
+        # Halving the radius shrinks the field so the cap stops biting. Results merge into
+        # the existing record rather than replacing it, so nothing found the first time is
+        # lost by looking again more closely.
+        capped = [f for f in fuel
+                  if done.get(str(f["mp"]), {}).get("google_returned", 0) >= 20]
+        if not capped:
+            print("No exit hit the 20-result cap. Nothing to tighten.")
+            return 0
+        todo = capped
+    else:
+        todo = [f for f in fuel if str(f["mp"]) not in done]
     if args.limit:
         todo = todo[:args.limit]
 
@@ -253,11 +296,17 @@ def main():
     if not todo:
         print("Nothing to do. Pass --redo to start over.")
         return 0
+    if args.tighten:
+        print("Re-searching only the exits that hit Google's 20-result cap, at half the "
+              "radius.\nFindings merge into what is already there; nothing is discarded.")
     print(f"That is {len(todo)} billable Nearby Search requests.\n")
 
     records = dict(done)
     for i, ex in enumerate(todo, 1):
         centre, radius = search_area(ex, model)
+        prior = records.get(str(ex["mp"])) if args.tighten else None
+        if args.tighten:
+            radius = max(0.8, round(prior["searched"]["radius_mi"] / 2, 2))
         try:
             payload = search(key, centre, radius)
         except urllib.error.HTTPError as e:
@@ -268,16 +317,29 @@ def main():
             print(f"  STOPPING at MP {ex['mp']}: {type(e).__name__}: {e}")
             break
 
-        stations, closed, discovered = reconcile(ex, payload.get("places", []))
+        places = payload.get("places", [])
+        if prior:
+            # Rebuild the earlier pass's Google results from the record -- every place it
+            # saw is either attached to one of our stations or sitting in `discovered` --
+            # and reconcile against the union, so a tighter look only ever adds.
+            earlier = [s["google"] for s in prior.get("stations", []) if s.get("google")]
+            earlier += prior.get("discovered", [])
+            have = {g.get("google_id") for g in earlier}
+            merged = [g for g in places if g.get("id") not in have]
+            places = merged + [_relift(g) for g in earlier]
+        stations, closed, discovered = reconcile(ex, places)
         records[str(ex["mp"])] = {
             "mp": ex["mp"], "town": ex.get("town"), "exit_road": ex.get("exit_road"),
             "our_confidence": ex.get("confidence"),
             "searched": {"lat": round(centre[0], 5), "lon": round(centre[1], 5),
                          "radius_mi": round(radius, 2)},
             "google_returned": len(payload.get("places", [])),
+            "capped": len(payload.get("places", [])) >= 20,
             "stations": stations, "closed": closed, "discovered": discovered,
         }
-        flag = "  <-- CLOSED" if closed else ""
+        gained = (len(discovered) - len(prior.get("discovered", []))) if prior else None
+        flag = "  <-- CLOSED" if closed else (
+            f"  (+{gained} more)" if gained else "")
         print(f"  {i}/{len(todo)}  MP {ex['mp']:<6} {(ex.get('town') or '')[:22]:<22} "
               f"{len(stations)} ours, {len(discovered)} new{flag}", flush=True)
         save(records)

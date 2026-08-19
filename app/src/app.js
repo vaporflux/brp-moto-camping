@@ -628,11 +628,15 @@
     };
     if (c.kind === 'fuel') {
       const g = { usable: ['ok', 'Fuel'], usable_via_detour: ['info', 'Via detour'],
+                  usable_google: ['info', 'Google'],
                   unconfirmed: ['warn', 'Unconfirmed'], do_not_rely: ['danger', 'Do not rely'],
                   unreachable: ['danger', 'Unreachable'] }[c._fuel.plan_grade]
                 || ['warn', c._fuel.plan_grade];
       add(g[0], g[1], c.watchout || '');
-      if (c.fuelConfidence && c.fuelConfidence !== 'verified') add('warn', c.fuelConfidence);
+      // The grade badge already says "Google" for these; a second raw one in warning
+      // colours reads as a different, worse problem than the one it is describing.
+      if (c.fuelConfidence && c.fuelConfidence !== 'verified'
+          && c.fuelConfidence !== 'google') add('warn', c.fuelConfidence);
       if ((c.stations || []).length) add('info', `${c.stations.length} station`
                                               + (c.stations.length > 1 ? 's' : ''));
     } else {
@@ -761,6 +765,8 @@
       ['Fuel', c.fuelGrade],
       ['Checked', c.fuelConfidence
         ? (c.fuelConfidence === 'verified' ? 'Verified against published sources'
+           : c.fuelConfidence === 'google'
+             ? 'From Google Places. Phone it before you count on it after dark.'
            : `Confidence: ${c.fuelConfidence}`) : null],
       ['Stations', (c.stations || []).length
         ? c.stations.map(st => [st.name || st.brand,
@@ -1471,7 +1477,8 @@
       sec.append(el('div', 'tiny',
         'There is no fuel anywhere on the Parkway itself \u2014 every one of these is a '
         + 'ride off it and back, and the mileage shown is one way. Grades separate two '
-        + 'things on purpose: whether a pump exists, and whether you can reach it in 2026.'));
+        + 'things on purpose: whether a pump exists, and whether you can reach it in 2026. '
+        + 'A "Google" badge means Google lists it and nobody has stood in front of it.'));
     }
 
     pane.append(sec);
@@ -1780,7 +1787,8 @@
       { color: '#5b93b8', label: 'Hotel or motel' }
     ],
     fuel: [
-      { color: '#5b93b8', label: 'Fuel — usable' },
+      { color: '#5b93b8', label: 'Fuel — researched', note: 'verified for this planner' },
+      { color: '#8fb0c9', label: 'Fuel — Google', note: 'listed, not visited' },
       { color: '#e0a33e', label: 'Fuel — unconfirmed' },
       { color: '#c8552f', label: 'Fuel — do not rely on it' },
       { color: '#6b6b6b', label: 'Fuel — unreachable in 2026' }
@@ -1790,7 +1798,10 @@
   const PLACE_COLOR = c => c.kind === 'hotel' ? '#5b93b8'
                          : c.moto ? '#c8552f'
                          : c.tier === 'top' ? '#e0a33e' : '#7fa35c';
+  // Google-listed pumps get a paler blue than researched ones: usable, and visibly a
+  // weaker claim, without inventing a whole new colour for a fifth state.
   const FUEL_COLOR = f => ({ usable: '#5b93b8', usable_via_detour: '#5b93b8',
+                             usable_google: '#8fb0c9',
                              unconfirmed: '#e0a33e', do_not_rely: '#c8552f',
                              unreachable: '#6b6b6b' }[f.plan_grade] || '#5b93b8');
 
@@ -1909,6 +1920,7 @@
   function fuelAsPlace(f, at) {
     const grade = {
       usable: 'Usable', usable_via_detour: 'Usable, via the signed detour',
+      usable_google: 'Listed by Google — nobody has ridden to it',
       unconfirmed: 'Unconfirmed — nobody has checked this one',
       do_not_rely: 'Do not rely on this one',
       unreachable: 'Unreachable in 2026'
