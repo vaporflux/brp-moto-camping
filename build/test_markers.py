@@ -281,7 +281,9 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   await p.setViewportSize({ width: 390, height: 844 });
   const safeArea = await p.evaluate(inset => {
     const st = document.createElement('style');
-    st.textContent = `#app { padding-top: ${inset}px !important; }`;
+    // Override the shared name, exactly where the real notch feeds in. Overriding #app's
+    // padding alone would miss every position:fixed control -- which is most of them.
+    st.textContent = `:root { --safe-top: ${inset}px; }`;
     document.head.append(st);
     // A phone: the map is the top element, so its controls are the ones at risk.
     document.querySelector('#app').classList.add('map-full');
@@ -317,6 +319,7 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
       res({ mapFull, listFull: app.className,
             visible: r.width > 0 && r.height > 0,
             onTop: !!(mid && mid.closest('#maptoggle')),
+            hit: mid ? (mid.id || mid.className || mid.tagName) : null,
             label: b.textContent });
     }, 400));
   });
