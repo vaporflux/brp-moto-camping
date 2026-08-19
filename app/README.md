@@ -123,10 +123,19 @@ shows *Showers unknown* rather than being silently dropped.
 ### Picking a place
 
 A list row shows a name and a milepost, which tells a rider nothing about whether they want
-to sleep there. So tapping a row **previews** it: the map flies to it, drops a marker with
-a dashed line showing how far off the Parkway it actually sits, and a detail card opens
-with price, season, showers, toilets, access notes and the honest "watch out". Committing
-is a second, deliberate tap — *Stay here*.
+to sleep there. So tapping a row previews it **on the map**: the view flies to the place, a
+marker drops with a dashed line showing how far off the Parkway it really sits, and the
+full card opens in the map popup — price, season, showers, toilets, access notes and the
+honest "watch out", with *Stay here* / *Not this one* right there. The card deliberately
+does not live in the sidebar: stacked under the form it pushed the list around and got
+lost, and the rider was reading detail in one place while looking at the location in
+another.
+
+Inside the popup the name and the buttons are pinned and only the detail scrolls. On a
+phone the map pane is barely 350px tall, and a card that overflows it hides exactly the two
+things needed: what this place is, and how to say yes. The map move is deliberately
+un-animated, because Leaflet's popup auto-pan measures against the map's current position
+and a running animation makes that stale.
 
 Every place also carries a hover tooltip and a click handler on the map itself, so the dots
 are identifiable without going near the list.

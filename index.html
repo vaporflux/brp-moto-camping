@@ -291,6 +291,30 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
   .facts dt { margin-top: 7px; }
 }
 .row.sel { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--amber); }
+
+/* The place card lives in a map popup now, not the sidebar. */
+.place-popup .leaflet-popup-content-wrapper { padding: 0; overflow: hidden; }
+/* Leaflet sets an inline width from measured content; "auto" let the facts grid collapse
+   the card to a 160px column. Pin it instead. */
+.place-popup .leaflet-popup-content { margin: 0; width: 300px !important; }
+/* Header and buttons pinned, detail scrolls between them. */
+.place-popup .preview {
+  border: 0; border-radius: var(--radius); margin: 0;
+  display: flex; flex-direction: column; max-height: 340px;
+}
+.place-popup .preview-body { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.place-popup .preview-head { flex: 0 0 auto; }
+.place-popup .btn-row { flex: 0 0 auto; margin-top: 10px; }
+.place-popup .facts { grid-template-columns: auto 1fr; gap: 2px 10px; }
+.place-popup .facts dd { font-size: 11.5px; }
+.place-popup .btn { min-height: 38px; font-size: 12.5px; }
+@media (max-width: 860px) {
+  .place-popup .facts { grid-template-columns: 1fr; }
+  /* The map pane is 42vh on a phone. Keep the whole popup inside it so nothing lands
+     above the fold. */
+  .place-popup .leaflet-popup-content { width: min(300px, 78vw) !important; }
+  .place-popup .preview { max-height: 26vh; }
+}
 </style>
 </head>
 <body>
@@ -1437,6 +1461,7 @@ const Gpx = (() => {
     stayWithinMi: 15,          // miles off the Parkway
     previewId: null,           // place shown on the map but not yet committed
     googleResults: null,       // live Google Places hits, never persisted
+    googleNote: null,          // what the last Google search found, and what got filtered
     tab: 'plan',
     filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
     search: '',
@@ -1979,12 +2004,11 @@ const Gpx = (() => {
         if (badges.childElementCount) body.append(badges);
         b.append(body);
         if (state.previewId === c.id) b.classList.add('sel');
-        // Tapping shows it on the map first. Committing is a second, deliberate action --
-        // a name and a milepost tell a rider nothing about whether they want to sleep
-        // there, so nothing is added to the trip until they have seen where it is.
+        // Tapping shows it ON THE MAP. The detail belongs where the rider is looking at
+        // the location, not stacked in a sidebar where it pushes the list around and gets
+        // lost. Committing is still a second, deliberate action, taken in the popup.
         b.onclick = () => { state.previewId = c.id; render(); previewOnMap(c); };
         list.append(b);
-        if (state.previewId === c.id) list.append(previewCard(c));
       });
     };
     input.oninput = e => { state.destQuery = e.target.value; draw(); };
@@ -1994,7 +2018,8 @@ const Gpx = (() => {
     return sec;
   }
 
-  /* The detail a list row cannot carry, shown once the rider has picked something out. */
+  /* The detail a list row cannot carry. Rendered into the map popup, anchored to the
+   * place itself, so the rider reads it while looking at where it is. */
   function previewCard(c) {
     const card = el('div', 'preview');
     const head = el('div', 'preview-head');
@@ -2023,37 +2048,49 @@ const Gpx = (() => {
       dl.append(el('dt', null, k));
       dl.append(el('dd', null, String(v)));
     });
-    card.append(dl);
+    // The detail scrolls; the name above it and the buttons below it do not. On a phone
+    // the map pane is under 400px tall, and a card that overflows it hides exactly the two
+    // things the rider needs: what this place is, and how to say yes.
+    const body = el('div', 'preview-body');
+    body.append(dl);
+    card.append(body);
 
     if (c.blocking_closure) {
-      card.append(el('div', 'alert warn',
+      body.append(el('div', 'alert warn',
         `The Parkway is closed at MP ${c.mp.toFixed(1)} — ${c.blocking_closure.reason}. `
         + `You can still get here, but not straight off the Parkway.`));
     }
-    card.append(el('div', 'tiny',
+    body.append(el('div', 'tiny',
       c.source === 'curated' ? 'Researched and verified for this planner.'
       : c.source === 'osm' ? 'From OpenStreetMap. Details may be incomplete.'
       : 'From Google, this session only.'));
 
     const row = el('div', 'btn-row');
     row.style.marginTop = '10px';
+    // Either button ends the decision, so the popup and its marker go with it. Leaving
+    // an answered popup open on the map is clutter the rider has to dismiss by hand.
+    const dismiss = () => {
+      if (map) map.closePopup();
+      if (layers.preview) layers.preview.clearLayers();
+      state.previewId = null;
+    };
     const add = el('button', 'btn primary', 'Stay here');
     add.onclick = () => {
-      addStop(BRP.placeStop(c));
+      const stop = BRP.placeStop(c);
+      dismiss();
       state.destQuery = '';
       state.addingStop = false;
-      state.previewId = null;
-      render();
+      addStop(stop);
     };
     const shut = el('button', 'btn ghost', 'Not this one');
-    shut.onclick = () => { state.previewId = null; render(); };
+    shut.onclick = () => { dismiss(); render(); };
     row.append(add, shut);
     if (c.url) {
       const link = el('a', 'tiny');
       link.href = c.url; link.target = '_blank'; link.rel = 'noopener';
       link.textContent = 'Open their website';
       link.style.cssText = 'display:block;margin-top:8px;color:var(--sky)';
-      card.append(link);
+      body.append(link);
     }
     card.append(row);
     return card;
@@ -2061,14 +2098,18 @@ const Gpx = (() => {
 
   function previewOnMap(c) {
     if (!map) return;
-    map.setView([c.lat, c.lon], Math.max(map.getZoom(), 11), { animate: true });
+    // Not animated: Leaflet's popup auto-pan measures against the map's current position,
+    // and while a setView animation is still running that position is stale -- so the
+    // popup opens off the top of a short mobile map pane and the name is never seen.
+    map.setView([c.lat, c.lon], Math.max(map.getZoom(), 11), { animate: false });
     layers.preview.clearLayers();
+    // The full card goes in the popup as a live DOM node, so its buttons work and the
+    // rider decides while looking at the location rather than at a sidebar.
     L.marker([c.lat, c.lon], { icon: dot('#e0a33e', 20) })
-      .bindPopup(`<h3>${c.name}</h3>`
-        + `${c.mp != null ? 'MP ' + c.mp.toFixed(1) : ''}`
-        + `${c.off_parkway_mi != null ? ' · ' + c.off_parkway_mi + ' mi off the Parkway' : ''}`
-        + `${c.price ? '<br>' + c.price : ''}`
-        + `${c.access ? '<br><br>' + c.access : ''}`)
+      .bindPopup(previewCard(c), {
+        className: 'place-popup', maxWidth: 330, minWidth: 260,
+        autoPan: true, autoPanPadding: [16, 16], keepInView: true, closeButton: true
+      })
       .addTo(layers.preview)
       .openPopup();
     // Show how far off the Parkway it actually sits -- the thing a milepost hides.
@@ -2088,23 +2129,38 @@ const Gpx = (() => {
     const wrap = el('div');
     wrap.style.marginTop = '10px';
     const row = el('div', 'btn-row');
-    const btn = el('button', 'btn sm ghost', 'Also search Google near the Parkway');
+    const btn = el('button', 'btn sm ghost', 'Also search Google near this stretch');
     const status = el('div', 'tiny');
     status.style.marginTop = '6px';
+    if (state.googleNote) status.textContent = state.googleNote;
     row.append(btn);
     if (state.googleResults) {
       const clear = el('button', 'btn sm ghost', 'Clear Google results');
-      clear.onclick = () => { state.googleResults = null; render(); };
+      clear.onclick = () => { state.googleResults = null; state.googleNote = null; render(); };
       row.append(clear);
     }
     wrap.append(row, status);
+    const hint = el('div', 'tiny');
+    hint.style.marginTop = '4px';
+    hint.textContent = 'Searches the Parkway nearest the middle of the map — pan the map to '
+                     + 'look somewhere else.';
+    wrap.append(hint);
 
     btn.onclick = async () => {
-      // Search around the Parkway near where the rider is heading, not around their house.
-      const anchor = state.stops.length ? state.stops[state.stops.length - 1]
-                   : (state.start ? { mp: null, lat: state.start.lat, lon: state.start.lon } : null);
-      if (!anchor) { status.textContent = 'Set a starting point first.'; return; }
-      const [lat, lon] = anchor.mp != null ? BRP.coordAtMp(anchor.mp) : [anchor.lat, anchor.lon];
+      // Anchor on the PARKWAY, near whatever the rider is looking at.
+      //
+      // This previously searched around the start address when no stop was picked yet,
+      // which for a rider 90 miles away returned their own town's hotels -- every one of
+      // which the "within N mi of the Parkway" filter then discarded. The button said
+      // "near the Parkway" and searched nowhere near it, and the failure was silent.
+      const centre = map ? map.getCenter() : null;
+      const seed = state.stops.length
+        ? BRP.coordAtMp(state.stops[state.stops.length - 1].mp)
+        : centre ? [centre.lat, centre.lng]
+        : state.start ? [state.start.lat, state.start.lon] : null;
+      if (!seed) { status.textContent = 'Set a starting point first.'; return; }
+      const near = BRP.nearestVertex(seed[0], seed[1]);
+      const [lat, lon] = BRP.coordAtMp(near.mp);
       status.textContent = 'Searching Google\u2026';
       try {
         const type = state.stayKind === 'campground' ? 'campground' : 'lodging';
@@ -2113,13 +2169,24 @@ const Gpx = (() => {
                               + `&radius_m=${Math.round(radius)}&type=${type}`);
         const data = await res.json();
         if (!res.ok) { status.textContent = data.error || 'Google search failed.'; return; }
-        state.googleResults = (data.places || []).map(g => {
-          const near = BRP.nearestVertex(g.lat, g.lon);
+        const hits = (data.places || []).map(g => {
+          const n = BRP.nearestVertex(g.lat, g.lon);
           return { ...g, id: `google-${g.id}`,
                    kind: type === 'campground' ? 'campground' : 'hotel',
-                   mp: near.mp, off_parkway_mi: Math.round(near.distance * 100) / 100,
+                   mp: n.mp, off_parkway_mi: Math.round(n.distance * 100) / 100,
                    showers: null, toilets: null };
-        });
+        }).sort((a, b) => a.off_parkway_mi - b.off_parkway_mi);
+        state.googleResults = hits;
+        // Say what the filters swallowed. A search that returns twenty results and shows
+        // none looks broken, and looking broken is worse than being empty.
+        const shown = hits.filter(h => h.off_parkway_mi <= state.stayWithinMi).length;
+        state.googleNote = hits.length === 0
+          ? 'Google found nothing there. Pan the map somewhere else and try again.'
+          : shown === hits.length
+          ? `Google found ${hits.length}, all within ${state.stayWithinMi} mi of the Parkway.`
+          : `Google found ${hits.length}, but only ${shown} are within ${state.stayWithinMi} mi `
+            + `of the Parkway. The nearest is ${hits[0].off_parkway_mi} mi off — widen the `
+            + `distance filter to see the rest.`;
         render();
       } catch (e) {
         status.textContent = 'Google search needs a connection. Everything already listed '
