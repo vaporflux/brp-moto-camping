@@ -13,10 +13,12 @@ and the Notes tab).
 This is the offline tier. Google Places fills gaps live, on demand, through api/places.js
 when there IS signal -- see app/README.md.
 
-NOTE: this script could not be exercised where it was written. `overpass-api.de` is blocked
-by that environment's egress policy, so the query below is unverified against a live
-server. It validates whatever it receives and refuses to write nonsense, but the first run
-is yours. If Overpass is busy, it retries the public mirrors in turn.
+NOTE on what has and has not been exercised. The parsing, milepost placement, distance
+filtering and three-state amenity handling have all run against a real Overpass response
+(2,849 elements, fetched by hand and fed in with --raw). The HTTP path -- the mirror list
+and its retries -- has not: `overpass-api.de` is blocked by the egress policy where this
+was written. So a live run may still surprise you, but what it does with the answer will
+not. If Overpass is busy, it retries the public mirrors in turn.
 """
 import argparse
 import json
