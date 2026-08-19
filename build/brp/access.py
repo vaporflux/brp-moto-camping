@@ -106,8 +106,31 @@ def _usable(f, max_detour_mi):
     return True
 
 
+def exit_reserve_mi(fuel, dest_mp, component=None, max_detour_mi=None):
+    """Miles needed to get from the destination back to fuel.
+
+    A campsite on the Parkway sells no fuel, and neither does the Parkway. Arriving on
+    fumes is a plan that works right up until the morning, so the rider must reach camp
+    holding enough to reach the nearest pump again -- in either direction, since they may
+    carry on south or turn for home.
+    """
+    best = None
+    for f in fuel:
+        if not _usable(f, max_detour_mi):
+            continue
+        if component is not None and f.get("component") != component:
+            continue
+        cost = abs(f["mp"] - dest_mp) + (f.get("detour_plan_mi") or 0.0)
+        if best is None or cost < best[0]:
+            best = (cost, f)
+    if best is None:
+        return None, None
+    return round(best[0], 1), best[1]
+
+
 def plan_fuel(fuel, access_mp, dest_mp, tank_mi, approach_leg_mi=0.0,
-              reserve_frac=0.10, full_at_access=True, max_detour_mi=None, component=None):
+              reserve_frac=0.0, full_at_access=True, max_detour_mi=None, component=None,
+              require_exit_fuel=True):
     """Where this rider must stop for fuel, given the range of their bike.
 
     Greedy furthest-reachable, which is optimal for refuelling to full along a line: at
@@ -152,6 +175,14 @@ def plan_fuel(fuel, access_mp, dest_mp, tank_mi, approach_leg_mi=0.0,
     exits.sort(key=lambda e: e["pos"])
 
     dest_pos = abs(dest_mp - access_mp)
+
+    # Plan as though the ride continues past camp to the nearest pump. Requiring that
+    # margin up front is what stops the planner from delivering a rider to a campsite
+    # with nothing in the tank and no fuel for 30 miles in any direction.
+    exit_mi, exit_stop = (exit_reserve_mi(fuel, dest_mp, component, max_detour_mi)
+                          if require_exit_fuel else (None, None))
+    target_pos = dest_pos + (exit_mi or 0.0)
+
     pos = 0.0
     remaining = planning_range
     stops, notes = [], []
@@ -168,7 +199,7 @@ def plan_fuel(fuel, access_mp, dest_mp, tank_mi, approach_leg_mi=0.0,
                      f"with a full tank — there is no fuel on it anywhere.")
 
     guard = 0
-    while dest_pos - pos > remaining:
+    while target_pos - pos > remaining:
         guard += 1
         if guard > 100:
             return {"ok": False, "stops": stops, "error": "Could not converge on a fuel plan."}
@@ -178,7 +209,7 @@ def plan_fuel(fuel, access_mp, dest_mp, tank_mi, approach_leg_mi=0.0,
         if not reachable:
             ahead = [e for e in exits if e["pos"] > pos + 1e-9]
             nxt = ahead[0] if ahead else None
-            need = ((nxt["pos"] - pos) + nxt["detour_mi"]) if nxt else (dest_pos - pos)
+            need = ((nxt["pos"] - pos) + nxt["detour_mi"]) if nxt else (target_pos - pos)
             where = (f"MP {nxt['mp']} ({nxt['town']})" if nxt else "the destination")
             return {
                 "ok": False, "stops": stops,
@@ -194,8 +225,16 @@ def plan_fuel(fuel, access_mp, dest_mp, tank_mi, approach_leg_mi=0.0,
         # Full tank, minus the ride back out to the Parkway.
         remaining = planning_range - stop["detour_mi"]
 
+    if exit_mi is not None:
+        notes.append(f"Nearest fuel to camp is {exit_stop.get('town') or 'the closest pump'} "
+                     f"(MP {exit_stop['mp']}), about {exit_mi:.0f} mi away. The plan keeps "
+                     f"that much in the tank so you can get back out.")
+
     return {
         "ok": True, "stops": stops, "notes": notes,
+        "exit_reserve_mi": exit_mi,
+        "exit_reserve_stop": ({"mp": exit_stop["mp"], "town": exit_stop.get("town")}
+                              if exit_stop else None),
         "arrive_with_mi": round(remaining - (dest_pos - pos), 1),
         "planning_range_mi": round(planning_range, 1),
         "parkway_mi": round(dest_pos, 1),

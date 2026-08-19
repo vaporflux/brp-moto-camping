@@ -19,10 +19,8 @@
     maxMilesPerDay: 180,
     maxFuelDetourMi: 8,
     tankMi: 200,              // usable miles on a tank. NOT a GSA assumption.
-    reservePct: 10,
     start: null,              // {lat, lon, label} — where the rider actually begins
     accessMp: null,           // chosen Parkway entry; null = let the planner pick
-    accessMode: 'soonest',    // 'soonest' = get on the Parkway fast; 'shortest' = least total
     tab: 'plan',
     filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
     search: '',
@@ -37,8 +35,8 @@
       localStorage.setItem(STORE_KEY, JSON.stringify({
         name: state.name, stops: state.stops, maxMilesPerDay: state.maxMilesPerDay,
         maxFuelDetourMi: state.maxFuelDetourMi, checklist: state.checklist,
-        device: state.device, tankMi: state.tankMi, reservePct: state.reservePct,
-        start: state.start, accessMp: state.accessMp, accessMode: state.accessMode
+        device: state.device, tankMi: state.tankMi,
+        start: state.start, accessMp: state.accessMp
       }));
     } catch (e) { /* private mode: the trip still works, it just will not persist */ }
   }
@@ -116,10 +114,17 @@
           });
         }
         if (worst && worst.gapMi > 40) {
+          // Only an error if the rider's tank cannot span it. Otherwise it is context.
+          const spanned = worst.gapMi <= state.tankMi;
           warnings.unshift({
-            level: 'error',
-            text: `${worst.gapMi} mi with no fuel inside a ${state.maxFuelDetourMi} mi detour `
-                + `(MP ${worst.from.mp.toFixed(1)} → ${worst.to.mp.toFixed(1)}). Fill before you start.`
+            level: spanned ? 'info' : 'error',
+            text: spanned
+              ? `Longest stretch with no reachable fuel is ${worst.gapMi} mi `
+                + `(MP ${worst.from.mp.toFixed(1)} → ${worst.to.mp.toFixed(1)}). Your `
+                + `${state.tankMi} mi tank covers it.`
+              : `${worst.gapMi} mi with no fuel inside a ${state.maxFuelDetourMi} mi detour `
+                + `(MP ${worst.from.mp.toFixed(1)} → ${worst.to.mp.toFixed(1)}), and your `
+                + `${state.tankMi} mi tank does not span it. Carry fuel or raise the detour limit.`
           });
         } else if (worst && worst.gapMi > 25) {
           warnings.unshift({
@@ -146,7 +151,10 @@
 
     let options = [];
     try {
-      options = Access.bestAccessPoints(startLL, state.stops[0].mp, 4, state.accessMode);
+      // Always "soonest": the point of the trip is to be ON the Parkway, so the ride in
+      // is overhead to minimise. Ranking by total distance instead can enter a hundred
+      // yards from the campsite and ride no Parkway at all.
+      options = Access.bestAccessPoints(startLL, state.stops[0].mp, 4, 'soonest');
     } catch (e) {
       return { error: e.message };
     }
@@ -160,8 +168,7 @@
     const component = BRP.componentForStop(state.stops[0]);
     const fuel = Access.planFuel({
       accessMp: chosen.mp, destMp: dest.mp, tankMi: state.tankMi,
-      approachLegMi: chosen.approachMi, reserveFrac: state.reservePct / 100,
-      maxDetourMi: state.maxFuelDetourMi, component
+      approachLegMi: chosen.approachMi, maxDetourMi: state.maxFuelDetourMi, component
     });
 
     // Is the rider closer to a stretch of Parkway that cannot reach their destination?
@@ -170,9 +177,9 @@
       .map(p => ({ ...p, d: Access.approachMi(startLL, [p.lat, p.lon]) }))
       .sort((a, b) => a.d - b.d)[0];
     const severedNote = allNearest && allNearest.component !== chosen.component
-      ? `Your nearest Parkway access is MP ${allNearest.mp} (${allNearest.name}), but that `
-      + `stretch cannot reach your destination — the Parkway is severed between them. The `
-      + `entry below is the closest one that actually connects.`
+      ? `Closer Parkway access exists at MP ${allNearest.mp}, but Hurricane Helene closures `
+      + `mean that stretch cannot reach your campsite. This entry is the nearest one that `
+      + `connects.`
       : null;
 
     return { chosen, options, fuel, dest, severedNote,
@@ -215,32 +222,42 @@
   }
 
   /* ---- rendering: plan ----------------------------------------------------- */
+  /* The Plan tab answers one question: I am here, I want to camp there, what do I do?
+   *
+   * Two inputs and an itinerary. Everything the planner works out -- which access point,
+   * where to buy fuel, how far each day runs -- is shown as a result, never as a choice
+   * to make. An earlier version exposed access-point rankings and made the rider click
+   * fuel stops onto the trip; that put the machinery in front of the answer.
+   */
   function renderPlan() {
     const pane = $('#pane-plan');
     pane.textContent = '';
-    pane.append(sectionStart(), sectionBike());
-
-    if (!state.stops.length) {
-      pane.append(emptyState());
-      return;
-    }
-
-    const trip = itinerary();
-    if (trip) pane.append(sectionAccess(trip), sectionFuel(trip));
-    pane.append(sectionDays());
-    pane.append(sectionTools());
+    pane.append(fieldStart(), fieldDestination(), fieldLimits());
+    pane.append(sectionItinerary());
   }
 
-  /* ---- Plan: where the rider starts -------------------------------------------- */
-  function sectionStart() {
+  /* ---- input 1: where you start ------------------------------------------------- */
+  function fieldStart() {
     const sec = el('div', 'section');
-    sec.append(el('h2', null, 'Start from'));
+    sec.append(el('h2', null, '1 · Starting from'));
+
+    if (state.start) {
+      const row = el('div', 'picked');
+      const body = el('div', 's-body');
+      body.append(el('div', 's-name', state.start.label));
+      row.append(body);
+      const clear = el('button', 'icon-btn danger', '\u2715');
+      clear.title = 'Change starting point';
+      clear.onclick = () => { state.start = null; state.accessMp = null; render(); };
+      row.append(clear);
+      sec.append(row);
+      return sec;
+    }
 
     const row = el('div', 'btn-row');
     const input = el('input');
     input.type = 'text';
-    input.placeholder = 'Address, town, or 35.5951, -82.5515';
-    input.value = state.start ? state.start.label : '';
+    input.placeholder = 'Your address or town';
     input.setAttribute('aria-label', 'Starting address');
     const go = el('button', 'btn sm', 'Find');
     go.style.flex = '0 0 auto';
@@ -249,33 +266,26 @@
 
     const status = el('div', 'tiny');
     status.style.marginTop = '7px';
-    sec.append(status);
-
     const results = el('div');
-    sec.append(results);
+    sec.append(status, results);
 
     const setStart = place => {
       state.start = { lat: place.lat, lon: place.lon, label: place.label };
-      state.accessMp = null;   // a new start invalidates the chosen entry
+      state.accessMp = null;
       render();
     };
-
     const lookup = async () => {
       const q = input.value.trim();
       if (!q) return;
       results.textContent = '';
-      status.textContent = 'Looking up…';
+      status.textContent = 'Looking up\u2026';
       try {
         const hits = await Geocode.search(q);
         status.textContent = '';
-        if (!hits.length) {
-          status.textContent = 'Nothing found. Try a town name, or tap the map to drop a pin.';
-          return;
-        }
+        if (!hits.length) { status.textContent = 'Nothing found. Try a town name.'; return; }
         if (hits.length === 1) { setStart(hits[0]); return; }
         hits.forEach(h => {
           const b = el('button', 'row');
-          b.append(el('div', 'mp', ''));
           const body = el('div', 'body');
           body.append(el('div', 'name', h.label.split(',').slice(0, 2).join(',')));
           body.append(el('div', 'meta', h.label));
@@ -284,10 +294,8 @@
           results.append(b);
         });
       } catch (e) {
-        // Address lookup is the one online feature. Say so plainly and offer the
-        // offline routes in rather than leaving a dead input.
-        status.textContent = 'Address lookup needs a connection. With no signal, tap the '
-                           + 'map to drop a pin, or type coordinates as "lat, lon".';
+        status.textContent = 'Address lookup needs a connection. With no signal, tap the map '
+                           + 'to drop a pin, or type coordinates as "lat, lon".';
       }
     };
     go.onclick = lookup;
@@ -298,7 +306,7 @@
     const here = el('button', 'btn sm ghost', 'Use my location');
     here.onclick = () => {
       if (!navigator.geolocation) { status.textContent = 'This browser has no location access.'; return; }
-      status.textContent = 'Getting your location…';
+      status.textContent = 'Getting your location\u2026';
       navigator.geolocation.getCurrentPosition(
         pos => setStart({ lat: pos.coords.latitude, lon: pos.coords.longitude,
                           label: `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}` }),
@@ -306,294 +314,229 @@
         { timeout: 10000 });
     };
     alt.append(here);
-    if (state.start) {
-      const clear = el('button', 'btn sm ghost', 'Clear');
-      clear.onclick = () => { state.start = null; state.accessMp = null; render(); };
-      alt.append(clear);
-    }
     sec.append(alt);
-
-    if (state.start) {
-      const ok = el('div', 'alert ok');
-      ok.style.marginTop = '9px';
-      ok.textContent = `Starting from ${state.start.label}`;
-      sec.append(ok);
-    }
     return sec;
   }
 
-  /* ---- Plan: the bike, not a hardcoded GSA -------------------------------------- */
-  function sectionBike() {
+  /* ---- input 2: where you are going -------------------------------------------- */
+  function fieldDestination() {
     const sec = el('div', 'section');
-    sec.append(el('h2', null, 'Your bike'));
-    sec.append(el('p', 'tiny',
-      'How far you ride between fill-ups. There is no fuel anywhere on the Parkway itself, '
-      + 'so this drives where you have to come off it.'));
-    const row = el('div', 'field-row');
-    for (const [key, label, min, max, suffix] of [
-      ['tankMi', 'Miles on a tank', 20, 600, 'mi'],
-      ['reservePct', 'Safety reserve', 0, 50, '%']
-    ]) {
-      const lab = el('label', 'field');
-      lab.append(el('span', null, `${label} (${suffix})`));
-      const inp = el('input');
-      inp.type = 'number'; inp.min = min; inp.max = max; inp.value = state[key];
-      inp.onchange = e => {
-        const v = +e.target.value;
-        if (!isNaN(v) && v >= min && v <= max) { state[key] = v; render(); }
-        else { e.target.value = state[key]; }
-      };
-      lab.append(inp);
-      row.append(lab);
-    }
-    sec.append(row);
-    const eff = state.tankMi * (1 - state.reservePct / 100);
-    sec.append(el('p', 'tiny', `Planning range: ${eff.toFixed(0)} mi between fill-ups.`));
-    return sec;
-  }
+    sec.append(el('h2', null, '2 · Camping at'));
 
-  /* ---- Plan: how to get onto the Parkway ---------------------------------------- */
-  function sectionAccess(trip) {
-    const sec = el('div', 'section');
-    sec.append(el('h2', null, 'Get on the Parkway'));
-    if (trip.error) {
-      sec.append(el('div', 'alert error', trip.error));
-      return sec;
-    }
-    if (trip.severedNote) sec.append(el('div', 'alert warn', trip.severedNote));
-
-    const c = trip.chosen;
-    const card = el('div', 'alert info');
-    card.textContent = `Enter at MP ${c.mp} — ${c.name}. About ${c.approachMi} mi to ride in, `
-                     + `then ${c.parkwayMi} mi of Parkway to your first stop.`;
-    sec.append(card);
-    const modes = el('div', 'chip-row');
-    modes.style.marginTop = '8px';
-    for (const [key, label, hint] of [
-      ['soonest', 'Get on the Parkway soonest', 'Least road miles before you are riding it'],
-      ['shortest', 'Shortest overall', 'Least total miles, even if you ride less Parkway']
-    ]) {
-      const b = el('button', `chip${state.accessMode === key ? ' on' : ''}`, label);
-      b.title = hint;
-      b.onclick = () => { state.accessMode = key; state.accessMp = null; render(); };
-      modes.append(b);
-    }
-    sec.append(modes);
-    sec.append(el('p', 'tiny',
-      state.accessMode === 'soonest'
-        ? 'Ranked by how quickly you get onto the Parkway, since that is the ride. '
-          + 'Approach distance is a straight-line estimate; your device computes the real roads.'
-        : 'Ranked by total distance. This can put you on the Parkway right next to your '
-          + 'destination — shortest, but barely a ride. Approach distance is an estimate.'));
-
-    if (trip.options.length > 1) {
-      const chips = el('div', 'chip-row');
-      chips.style.marginTop = '8px';
-      trip.options.forEach(o => {
-        const on = Math.abs(o.mp - c.mp) < 0.05;
-        const b = el('button', `chip${on ? ' on' : ''}`,
-          `MP ${o.mp} · ~${o.approachMi} in, ${o.parkwayMi} on`);
-        b.title = `${o.name} — ride in ~${o.approachMi} mi, then ${o.parkwayMi} mi of Parkway `
-                + `(~${o.totalMi} mi total)`;
-        b.onclick = () => { state.accessMp = o.mp; render(); };
-        chips.append(b);
-      });
-      sec.append(chips);
-    }
-    return sec;
-  }
-
-  /* ---- Plan: fuel worked out from the rider's range ----------------------------- */
-  function sectionFuel(trip) {   // eslint-disable-line no-unused-vars
-    const sec = el('div', 'section');
-    sec.append(el('h2', null, 'Fuel'));
-    if (trip.error) return sec;
-    const f = trip.fuel;
-
-    if (!f.ok) {
-      sec.append(el('div', 'alert error', f.error));
-      sec.append(el('p', 'tiny',
-        'Nothing on the Parkway sells fuel, and some gaps run past 49 miles with the only '
-        + 'exit in the middle costing 18 miles each way.'));
-      return sec;
-    }
-    (f.notes || []).forEach(n => sec.append(el('div', 'alert warn', n)));
-
-    // The verdict is about the Parkway portion only. Fuel exists off the Parkway and
-    // this dataset does not map it, so quoting the combined total against the tank
-    // produced contradictions like "151 mi total on a 31 mi range: no stop needed".
-    if (!f.stops.length) {
-      sec.append(el('div', 'alert ok',
-        `No fuel stop needed on the Parkway — ${f.parkwayMi} mi from MP ${trip.chosen.mp} to `
-        + `your destination, on a ${f.planningRangeMi} mi planning range. You arrive with `
-        + `about ${f.arriveWithMi} mi to spare.`));
-      if (f.approachMi) {
-        sec.append(el('p', 'tiny',
-          `That is the Parkway only. Your ~${f.approachMi} mi ride in is separate — fuel is `
-          + `easy to find off the Parkway, so this planner does not map it.`));
-      }
-      return sec;
-    }
-
-    sec.append(el('p', 'tiny',
-      `${f.stops.length} fill-up${f.stops.length > 1 ? 's' : ''} needed over the ${f.parkwayMi} mi `
-      + `Parkway portion. A detour burns range both ways, so a 15 mi detour costs 30 mi of tank.`));
-    f.stops.forEach(stop => {
-      const node = el('div', 'stop');
-      node.append(el('div', 'grip', `MP ${stop.mp}`));
-      const body = el('div', 's-body');
-      body.append(el('div', 's-name', `${stop.road || 'Fuel'} — ${stop.town || ''}`));
-      const bits = [`arrive with ~${stop.arriveWithMi} mi`];
-      if (stop.detourMi) bits.push(`${stop.detourMi} mi off the Parkway each way`);
-      if (stop.grade === 'unconfirmed') bits.push('station unconfirmed');
-      body.append(el('div', 's-meta', bits.join(' · ')));
-      node.append(body);
-      const add = el('button', 'icon-btn');
-      add.textContent = '+';
-      add.title = 'Add this fuel stop to the trip';
-      add.onclick = () => {
-        const rec = D.fuel.find(x => x.mp === stop.mp);
-        if (rec) addStop(BRP.asStop(rec));
-      };
-      node.append(add);
-      sec.append(node);
-      if (stop.warning) sec.append(el('div', 'alert warn', stop.warning));
-    });
-    sec.append(el('p', 'tiny', `You reach your destination with about ${f.arriveWithMi} mi left.`));
-    return sec;
-  }
-
-  /* ---- Plan: the stops, grouped into riding days -------------------------------- */
-  function sectionDays() {
-    const wrap = document.createDocumentFragment();
-    const days = buildDays();
-    let stopIndex = 0;
-    days.forEach(day => {
-      const card = el('div', 'day');
-      const head = el('header');
-      head.append(el('div', 'day-name', `Day ${day.index}`));
-      if (day.routes.length) {
-        const pts = day.routes.map(r => r.nTotal).join(' + ');
-        head.append(el('div', 'day-stats',
-          `${day.totalMi.toFixed(0)} mi · ${pts} pts${day.routes.length > 1 ? ' (split)' : ''}`));
-      }
-      card.append(head);
-
-      day.stops.forEach((s, k) => {
-        if (k === 0 && day.index > 1) return;   // the overnight belongs to the day before
-        if (s.id === 'start') {                 // synthetic: shown, but not editable here
-          const n = el('div', 'stop');
-          n.append(el('div', 'grip', 'HOME'));
-          const bd = el('div', 's-body');
-          bd.append(el('div', 's-name', s.label || 'Start'));
-          bd.append(el('div', 's-meta', `~${s.offParkwayMi} mi to MP ${s.mp.toFixed(1)}`));
-          n.append(bd);
-          card.append(n);
-          return;
-        }
-        const idx = stopIndex;
-        const node = el('div', 'stop');
-        node.append(el('div', 'grip', `MP ${s.mp.toFixed(1)}`));
+    if (state.stops.length) {
+      state.stops.forEach((st, i) => {
+        const row = el('div', 'picked');
         const body = el('div', 's-body');
-        body.append(el('div', 's-name', s.name));
-        const meta = [s.label, s.offParkwayMi ? `${s.offParkwayMi.toFixed(1)} mi off` : null]
-          .filter(Boolean).join(' · ');
-        if (meta) body.append(el('div', 's-meta', meta));
-        node.append(body);
-        const actions = el('div', 's-actions');
-        const mk = (glyph, title, fn, cls) => {
-          const b = el('button', `icon-btn${cls ? ' ' + cls : ''}`, glyph);
-          b.title = title; b.setAttribute('aria-label', title); b.onclick = fn;
-          return b;
-        };
-        actions.append(mk('\u2191', 'Move up', () => moveStop(idx, -1)));
-        actions.append(mk('\u2193', 'Move down', () => moveStop(idx, 1)));
-        actions.append(mk('\u2715', 'Remove', () => removeStop(idx), 'danger'));
-        node.append(actions);
-        card.append(node);
-        stopIndex++;
+        body.append(el('div', 's-name', st.name));
+        body.append(el('div', 's-meta',
+          `MP ${st.mp.toFixed(1)}${st.label ? ' \u00b7 ' + st.label : ''}`));
+        row.append(body);
+        const del = el('button', 'icon-btn danger', '\u2715');
+        del.title = 'Remove';
+        del.onclick = () => removeStop(i);
+        row.append(del);
+        sec.append(row);
       });
+      const more = el('button', 'btn sm ghost', '+ Add another night');
+      more.style.marginTop = '8px';
+      more.onclick = () => { state.addingStop = true; render(); };
+      if (!state.addingStop) { sec.append(more); return sec; }
+    }
 
-      (day.warnings || []).forEach(w => card.append(el('div', `alert ${w.level}`, w.text)));
-      if (day.error) card.append(el('div', 'alert error', day.error));
-      wrap.append(card);
-    });
-    return wrap;
+    const input = el('input');
+    input.type = 'text';
+    input.placeholder = 'Search campgrounds\u2026';
+    input.setAttribute('aria-label', 'Destination campground');
+    input.value = state.destQuery || '';
+    sec.append(input);
+
+    const list = el('div');
+    list.style.marginTop = '6px';
+    sec.append(list);
+
+    const draw = () => {
+      list.textContent = '';
+      const q = (state.destQuery || '').trim().toLowerCase();
+      const matches = D.campgrounds
+        .filter(c => !state.stops.some(s => s.id === `camp-${c.id}`))
+        .filter(c => !q || c.name.toLowerCase().includes(q)
+                        || String(c.mp).includes(q) || (c.state || '').toLowerCase() === q)
+        .slice(0, q ? 8 : 6);
+      if (!matches.length) {
+        list.append(el('div', 'tiny', 'No campground matches that.'));
+        return;
+      }
+      matches.forEach(c => {
+        const b = el('button', 'row');
+        b.append(el('div', 'mp', `MP ${c.mp}`));
+        const body = el('div', 'body');
+        body.append(el('div', 'name', c.name));
+        const bits = [c.price, c.moto ? 'Moto camp' : null,
+                      c.tier === 'top' ? 'Top pick' : null].filter(Boolean);
+        body.append(el('div', 'meta', bits.join(' \u00b7 ')));
+        if (!c.reachable_from_parkway) {
+          const badges = el('div', 'badges');
+          const bd = el('span', 'badge info', 'Off-Parkway access');
+          bd.title = c.blocking_closure ? c.blocking_closure.reason : '';
+          badges.append(bd);
+          body.append(badges);
+        }
+        b.append(body);
+        b.onclick = () => {
+          addStop(BRP.asStop(c));
+          state.destQuery = '';
+          state.addingStop = false;
+          render();
+        };
+        list.append(b);
+      });
+    };
+    input.oninput = e => { state.destQuery = e.target.value; draw(); };
+    draw();
+    return sec;
   }
 
-  function sectionTools() {
-    const wrap = document.createDocumentFragment();
-    const tools = el('div', 'section');
-    const btnRow = el('div', 'btn-row');
-    const auto = el('button', 'btn sm ghost', 'Auto-split by mileage');
-    auto.onclick = autoSplit;
-    const breaks = el('button', 'btn sm ghost', 'Clear day breaks');
-    breaks.onclick = () => { state.stops.forEach(s => s.dayBreakAfter = false); render(); };
-    btnRow.append(auto, breaks);
-    tools.append(btnRow);
+  /* ---- input 3: how you ride ---------------------------------------------------- */
+  function fieldLimits() {
+    const sec = el('div', 'section');
+    sec.append(el('h2', null, '3 · How you ride'));
 
-    const setup = el('div', 'section');
-    setup.append(el('h2', null, 'Riding days'));
-    const row = el('div', 'field-row');
-    for (const [key, label, min, max] of [
-      ['maxMilesPerDay', 'Max miles / day', 20, 600],
-      ['maxFuelDetourMi', 'Max fuel detour (mi)', 1, 30]
-    ]) {
+    const mk = (key, label, min, max, hint) => {
       const lab = el('label', 'field');
       lab.append(el('span', null, label));
       const inp = el('input');
       inp.type = 'number'; inp.min = min; inp.max = max; inp.value = state[key];
+      inp.setAttribute('aria-label', label);
       inp.onchange = e => {
         const v = +e.target.value;
         if (!isNaN(v) && v >= min && v <= max) { state[key] = v; render(); }
         else { e.target.value = state[key]; }
       };
       lab.append(inp);
-      row.append(lab);
-    }
-    setup.append(row);
+      if (hint) lab.append(el('span', 'tiny', hint));
+      return lab;
+    };
 
-    if (state.stops.length > 1) {
-      setup.append(el('p', 'tiny', 'Tap a stop to sleep there — it ends a riding day.'));
-      const chips = el('div', 'chip-row');
-      state.stops.slice(0, -1).forEach(st => {
-        const c = el('button', `chip${st.dayBreakAfter ? ' on' : ''}`, st.name.slice(0, 22));
-        c.onclick = () => { st.dayBreakAfter = !st.dayBreakAfter; render(); };
-        chips.append(c);
-      });
-      setup.append(chips);
+    const rowA = el('div', 'field-row');
+    rowA.append(mk('tankMi', 'Miles on a tank', 20, 600));
+    rowA.append(mk('maxMilesPerDay', 'Max miles / day', 20, 600));
+    sec.append(rowA);
+    const rowB = el('div', 'field-row');
+    rowB.append(mk('maxFuelDetourMi', 'Furthest you will ride off the Parkway for fuel',
+                   1, 30));
+    sec.append(rowB);
+    sec.append(el('p', 'tiny',
+      'There is no fuel anywhere on the Parkway itself, so the detour limit decides which '
+      + 'exits count. Raising it past 18 mi is what opens up MP 411.8 and closes the '
+      + '49.5 mi Asheville-to-Balsam gap — at 36 mi of round trip.'));
+    return sec;
+  }
+
+  /* ---- the answer --------------------------------------------------------------- */
+  function sectionItinerary() {
+    const wrap = document.createDocumentFragment();
+    if (!state.start || !state.stops.length) {
+      const hint = el('div', 'empty');
+      hint.append(el('p', null, !state.start
+        ? 'Add where you are starting from, then pick a campground.'
+        : 'Now pick where you are camping.'));
+      wrap.append(hint);
+      return wrap;
     }
-    wrap.append(tools, setup);
+
+    const trip = itinerary();
+    const sec = el('div', 'section');
+    sec.append(el('h2', null, 'Your ride'));
+    if (!trip || trip.error) {
+      sec.append(el('div', 'alert error', (trip && trip.error) || 'Could not plan this trip.'));
+      wrap.append(sec);
+      return wrap;
+    }
+    const c = trip.chosen, f = trip.fuel;
+
+    // With no safety percentage held back, a plan can technically "work" while arriving
+    // on fumes. Saying "no fuel stop needed" next to "arrive with 3 mi" is the kind of
+    // true-but-dangerous pairing that strands people, so a thin margin is stated as the
+    // headline rather than left in the detail line.
+    const THIN_MI = 20;
+    const thin = f.ok && !f.stops.length && f.arriveWithMi < THIN_MI;
+    const summary = el('div', `alert ${thin ? 'warn' : 'ok'}`);
+    let fuelLine;
+    if (!f.ok) fuelLine = '';
+    else if (f.stops.length) {
+      fuelLine = `${f.stops.length} fuel stop${f.stops.length > 1 ? 's' : ''} on the way.`;
+    } else if (thin) {
+      fuelLine = `It fits on one tank, but only just — you arrive with about `
+               + `${f.arriveWithMi} mi left. Fill up before MP ${c.mp}, or raise how far `
+               + `you will ride off the Parkway for fuel.`;
+    } else {
+      fuelLine = `No fuel stop needed — you arrive with about ${f.arriveWithMi} mi to spare.`;
+    }
+    summary.textContent = `~${c.approachMi} mi to reach the Parkway, then ${c.parkwayMi} mi `
+                        + `on it. ${fuelLine}`;
+    sec.append(summary);
+    if (trip.severedNote) sec.append(el('div', 'alert warn', trip.severedNote));
+    wrap.append(sec);
+
+    // The itinerary as a numbered list of things that happen, in order.
+    const steps = el('div', 'day');
+    steps.append(stepRow('HOME', state.start.label,
+                         `Ride ~${c.approachMi} mi to the Parkway`));
+    steps.append(stepRow(`MP ${c.mp}`, `Get on the Parkway — ${c.name}`,
+                         'Closest entry from where you are starting'));
+    if (f.ok) {
+      f.stops.forEach(stop => {
+        // Greedy planning rides each tank to its limit, which minimises stops but can
+        // arrive on fumes. Say that plainly rather than printing a small number and
+        // leaving the rider to notice.
+        const tight = stop.arriveWithMi < 15;
+        const detail = [
+          stop.detourMi ? `${stop.detourMi} mi off the Parkway` : 'right at the exit',
+          tight ? `cutting it fine — about ${stop.arriveWithMi} mi of planning range left`
+                : `about ${stop.arriveWithMi} mi of range still in hand`
+        ].join(' \u00b7 ');
+        steps.append(stepRow(`MP ${stop.mp}`,
+          `Fuel — ${[stop.road, stop.town].filter(Boolean).join(', ')}`,
+          detail, (tight || stop.grade === 'unconfirmed') ? 'warn' : null));
+      });
+    }
+    state.stops.forEach((st, i) => {
+      const last = i === state.stops.length - 1;
+      steps.append(stepRow(`MP ${st.mp.toFixed(1)}`, st.name,
+        last ? `Arrive${f.ok ? ` with ~${f.arriveWithMi} mi in the tank` : ''}` : 'Overnight',
+        last ? 'ok' : null));
+    });
+    wrap.append(steps);
+
+    if (!f.ok) {
+      const bad = el('div', 'section');
+      bad.append(el('div', 'alert error', f.error));
+      wrap.append(bad);
+    } else {
+      const notes = el('div', 'section');
+      (f.notes || []).forEach(n => notes.append(el('div', 'alert warn', n)));
+      buildDays().forEach(day => {
+        (day.warnings || []).forEach(w => notes.append(el('div', `alert ${w.level}`, w.text)));
+      });
+      if (state.stops.length > 1) {
+        notes.append(el('p', 'tiny', 'Each campground you add becomes an overnight.'));
+      }
+      if (notes.childElementCount) wrap.append(notes);
+    }
     return wrap;
   }
 
-  function emptyState() {
-    const empty = el('div', 'empty');
-    empty.append(el('p', null, state.start
-      ? 'Now pick where you are going — a campground from Browse, or tap the map.'
-      : 'Set where you are starting from, then pick a destination from Browse.'));
-    const quick = el('button', 'btn primary', 'Try it: Asheville \u2192 Cherokee (3 days)');
-    quick.onclick = () => {
-      const pick = (mp, name) => name
-        ? D.campgrounds.find(c => c.name.startsWith(name))
-        : D.fuel.find(f => f.mp === mp);
-      const plan = [
-        [382.5, null, false], [393.6, null, false],
-        [null, 'Lake Powhatan', true],
-        [null, 'Mount Pisgah', true],
-        [411.8, null, false], [443.1, null, false], [469.1, null, false]
-      ];
-      for (const [mp, name, brk] of plan) {
-        const rec = pick(mp, name);
-        if (rec) state.stops.push({ ...BRP.asStop(rec), dayBreakAfter: brk });
-      }
-      if (!state.start) {
-        state.start = { lat: 35.5951, lon: -82.5515, label: 'Asheville, NC' };
-      }
-      render();
-    };
-    empty.append(quick);
-    return empty;
+  function stepRow(marker, title, detail, level) {
+    const node = el('div', 'stop');
+    node.append(el('div', 'grip', marker));
+    const body = el('div', 's-body');
+    const name = el('div', 's-name', title);
+    if (level === 'ok') name.style.color = 'var(--ok)';
+    if (level === 'warn') name.style.color = 'var(--warn)';
+    body.append(name);
+    if (detail) body.append(el('div', 's-meta', detail));
+    node.append(body);
+    return node;
   }
 
   /* ---- rendering: browse --------------------------------------------------- */

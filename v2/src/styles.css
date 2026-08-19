@@ -223,3 +223,12 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
   .pane { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* A chosen input, shown as a settled fact rather than an editable field. */
+.picked {
+  display: flex; gap: 9px; align-items: center; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2);
+}
+.picked .s-body { flex: 1; min-width: 0; }
+.picked .s-name { font-size: 13px; font-weight: 600; }
+.picked .s-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }

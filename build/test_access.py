@@ -95,8 +95,17 @@ def main():
     check("a smaller tank never needs fewer stops", counts == sorted(counts), str(counts))
     check("a 300 mi tank needs no stop on an 87 mi run", counts[0] == 0)
     check("an 80 mi tank does need stops", counts[-1] >= 1)
-    check("the reserve is withheld from the planning range",
-          abs(runs[200]["planning_range_mi"] - 180.0) < 0.01)
+    # No abstract safety percentage by default: "miles on a tank" is already a rider's
+    # conservative real-world figure, and the exit-fuel rule below provides a concrete
+    # margin -- enough range at camp to reach the next pump -- which is worth more than a
+    # round number held back. The parameter still exists for anyone who wants one.
+    check("by default the full tank is planning range",
+          abs(runs[200]["planning_range_mi"] - 200.0) < 0.01,
+          str(runs[200]["planning_range_mi"]))
+    held = A.plan_fuel(fuel, 382.5, 469.1, 200, component=2, max_detour_mi=8,
+                       reserve_frac=0.10)
+    check("an explicit reserve is still honoured",
+          abs(held["planning_range_mi"] - 180.0) < 0.01, str(held["planning_range_mi"]))
 
     print("the approach leg is advice, not a fuel constraint")
     # This dataset maps fuel at Parkway exits only. A 137 mi ride in from Charlotte passes
@@ -115,6 +124,26 @@ def main():
                        max_detour_mi=8)
     check("a short approach produces no such note",
           not any("fuel on the way" in n for n in near["notes"]), str(near["notes"]))
+
+    print("arriving with enough fuel to get back out")
+    need, where = A.exit_reserve_mi(fuel, 408.6, 2, 8)
+    check("a Parkway campsite knows how far the nearest pump is",
+          need is not None and need > 0, str(need))
+    check("it picks the cheapest way back to fuel, either direction",
+          where["mp"] == 393.6, str(where and where["mp"]))
+    # A tank that only just reaches camp must be rejected: arriving empty at a campsite
+    # with no fuel for 18 miles is not a plan.
+    bare = A.plan_fuel(fuel, 382.5, 408.6, 32, component=2, max_detour_mi=8,
+                       require_exit_fuel=False)
+    guarded = A.plan_fuel(fuel, 382.5, 408.6, 32, component=2, max_detour_mi=8)
+    check("without the rule, a just-barely tank looks fine", bare["ok"])
+    check("with the rule, the same tank is caught",
+          not guarded["ok"] or len(guarded["stops"]) > len(bare["stops"]),
+          f"bare {bare['ok']}/{len(bare['stops'])} guarded {guarded['ok']}/{len(guarded['stops'])}")
+    roomy = A.plan_fuel(fuel, 382.5, 408.6, 200, component=2, max_detour_mi=8)
+    check("a roomy tank still needs no stop", roomy["ok"] and not roomy["stops"])
+    check("the plan says what the withheld range is for",
+          any("get back out" in n for n in roomy["notes"]), str(roomy["notes"]))
 
     print("fuel planning refuses rather than guessing")
     # Long Parkway run, small tank, and the only mid-gap exit excluded by detour limit.

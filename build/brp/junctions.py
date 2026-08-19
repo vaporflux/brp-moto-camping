@@ -14,6 +14,7 @@ design that assumes this list is complete will leave real junctions unprotected.
 The mitigation lives in the exporter, not here. See spacing_requirement().
 """
 import json
+import re
 
 SOURCE_PUBLISHED_EXIT = "published_exit_list"
 SOURCE_CLOSURE_DETOUR = "closure_detour"
@@ -37,9 +38,14 @@ def build(model, fuel_raw, closures_raw):
     for c in closures_raw["closures"]:
         if not c.get("detour"):
             continue
+        # closures.json describes a detour in prose ("Signed, MP 269.8-276.5 via US 221/US
+        # 421"). Using that whole sentence as a road name reads badly everywhere it
+        # surfaces, so pull the highway designations out of it.
+        roads = re.findall(r"\b(?:US|NC|VA|I)[- ]?\d+\b", c["detour"])
+        label = (" / ".join(dict.fromkeys(roads)) + " detour") if roads else "signed detour"
         out.append({
             "mp": float(c["from_mp"]),
-            "road": c["detour"],
+            "road": label,
             "side": None,
             "lat": round(model.coord_at_mp(c["from_mp"])[0], 6),
             "lon": round(model.coord_at_mp(c["from_mp"])[1], 6),

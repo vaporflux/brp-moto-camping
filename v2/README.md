@@ -54,24 +54,38 @@ id="pane-x">`, a `renderX()`, and a line in `render()`.
 
 ## The Plan tab
 
-The flow is: **where you start → which access point → your bike's range → stops → days.**
+Three inputs and an itinerary. Nothing the planner works out is offered as a choice.
 
-- **Start** takes an address, a town, `lat, lon`, or the browser's location. Address
-  lookup is the *only* part of this app that needs a network — it calls Nominatim. When it
-  fails it says so and points at the offline routes in (tap the map, type coordinates);
-  nothing else stops working.
-- **Access point** is chosen by *"get on the Parkway soonest"* — least road miles before
-  you are riding it. This matters more than it sounds: ranked by total distance instead, a
-  Charlotte→Cherokee trip enters at MP 469.1 and rides **0.1 mi** of Parkway. Ranked by
-  ride-in it enters near Asheville and rides 86.5. "Shortest overall" is one tap away for
-  when the campsite, not the road, is the point.
-- **Fuel** comes from the rider's tank range, never an assumed bike. A detour burns range
-  *both ways*, so a 15 mi detour costs 30 mi of tank — which is what makes MP 411.8 a trap.
-  The approach leg is deliberately **not** charged against the tank: this dataset maps fuel
-  at Parkway exits only, and a 130 mi ride in passes plenty of stations it knows nothing
-  about. It warns instead.
-- The rider's home joins the route as a `start` stop, so day mileage and the exported GPX
-  both begin at the house rather than dropping them onto the Parkway from nowhere.
+1. **Starting from** — address, town, `lat, lon`, or browser location.
+2. **Camping at** — campgrounds searched inline. No trip to the Browse tab.
+3. **How you ride** — miles on a tank, max miles per day, furthest you will ride off the
+   Parkway for fuel.
+
+Everything below that is the answer: which access point, where fuel comes from, what each
+leg costs. An earlier version exposed access-point rankings and made the rider click fuel
+stops onto the trip. That put the machinery in front of the answer, and it was the wrong
+shape — a rider deciding a fuel stop has no idea where they will be in the trip when they
+reach it.
+
+**Access point is never a choice.** Always the nearest entry that can actually reach the
+destination, so the ride in is short and the Parkway miles are long. Ranking by total
+distance instead is defensible arithmetic and useless in practice: Charlotte→Cherokee
+enters at MP 469.1 and rides 0.1 mi of Parkway.
+
+**Fuel is never a choice.** Stops are found and placed. Greedy furthest-reachable, which
+minimises stops. A detour burns range both ways — a 15 mi detour costs 30 mi of tank —
+which is what makes MP 411.8 a trap.
+
+**Arriving with enough to get back out** is a hard requirement, not advice. A campsite on
+the Parkway sells no fuel and neither does the Parkway, so the plan reserves enough range
+at camp to reach the nearest pump. Without it, a tank that "just reaches" camp looks fine
+and strands you in the morning.
+
+**There is no safety-percentage reserve.** "Miles on a tank" is already a rider's
+conservative real figure, and the exit-fuel rule is a concrete margin rather than a round
+number held back. The consequence is that a plan can fit on one tank with very little to
+spare, so a thin arrival is stated as the headline — "it fits, but only just, you arrive
+with about 3 mi left" — instead of the technically-true "no fuel stop needed".
 
 ## Behaviour worth knowing before you change it
 

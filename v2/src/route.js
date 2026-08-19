@@ -362,9 +362,23 @@ const Access = (() => {
    * you arrive having spent the ride out, and leave with a full tank minus the ride back.
    * A 15-mile detour therefore costs 30 miles of range. That asymmetry is what makes
    * MP 411.8 Wagon Road Gap a trap rather than a convenience. */
+  /* Miles needed to get from the destination back to fuel. A campsite on the Parkway
+   * sells none, and neither does the Parkway: arriving on fumes is a plan that works
+   * right up until the morning. */
+  function exitReserve(destMp, component, maxDetourMi) {
+    let best = null;
+    for (const f of BRP.data.fuel) {
+      if (!usable(f, maxDetourMi)) continue;
+      if (component != null && f.component !== component) continue;
+      const cost = Math.abs(f.mp - destMp) + (f.detour_plan_mi || 0);
+      if (!best || cost < best.cost) best = { cost, f };
+    }
+    return best ? { mi: Math.round(best.cost * 10) / 10, stop: best.f } : { mi: null, stop: null };
+  }
+
   function planFuel(opts) {
-    const { accessMp, destMp, tankMi, approachLegMi = 0, reserveFrac = 0.10,
-            maxDetourMi = null, component = null } = opts;
+    const { accessMp, destMp, tankMi, approachLegMi = 0, reserveFrac = 0,
+            maxDetourMi = null, component = null, requireExitFuel = true } = opts;
     // The approach does NOT consume range. This dataset maps fuel at Parkway exits and
     // nothing else, so it knows nothing about the gas stations between a rider's house
     // and the Parkway -- and there are plenty. Charging a 136-mile approach against the
@@ -388,6 +402,12 @@ const Access = (() => {
       .sort((a, b) => a.pos - b.pos);
 
     const destPos = Math.abs(destMp - accessMp);
+    // Plan as though the ride continues past camp to the nearest pump. Requiring that
+    // margin up front is what stops the planner delivering a rider to a campsite with an
+    // empty tank and no fuel for 18 miles in any direction.
+    const exit = requireExitFuel ? exitReserve(destMp, component, maxDetourMi)
+                                 : { mi: null, stop: null };
+    const targetPos = destPos + (exit.mi || 0);
     let pos = 0, remaining = planningRange;
     const stops = [], notes = [];
 
@@ -401,14 +421,14 @@ const Access = (() => {
     }
 
     let guard = 0;
-    while (destPos - pos > remaining) {
+    while (targetPos - pos > remaining) {
       if (++guard > 100) return { ok: false, stops, error: 'Could not converge on a fuel plan.' };
       const reachable = exits.filter(e => e.pos > pos + 1e-9
                                        && (e.pos - pos) + e.detourMi <= remaining);
       if (!reachable.length) {
         const ahead = exits.filter(e => e.pos > pos + 1e-9);
         const nxt = ahead[0];
-        const need = nxt ? (nxt.pos - pos) + nxt.detourMi : destPos - pos;
+        const need = nxt ? (nxt.pos - pos) + nxt.detourMi : targetPos - pos;
         const where = nxt ? `MP ${nxt.mp} (${nxt.town})` : 'your destination';
         return {
           ok: false, stops,
@@ -425,7 +445,13 @@ const Access = (() => {
       remaining = planningRange - stop.detourMi;   // full tank, minus the ride back out
     }
 
-    return { ok: true, stops, notes,
+    if (exit.mi != null) {
+      notes.push(`Nearest fuel to camp is ${exit.stop.town || 'the closest pump'} `
+               + `(MP ${exit.stop.mp}), about ${exit.mi.toFixed(0)} mi away. The plan keeps that `
+               + `much in the tank so you can get back out.`);
+    }
+    return { ok: true, stops, notes, exitReserveMi: exit.mi,
+             exitReserveStop: exit.stop ? { mp: exit.stop.mp, town: exit.stop.town } : null,
              arriveWithMi: Math.round((remaining - (destPos - pos)) * 10) / 10,
              planningRangeMi: Math.round(planningRange * 10) / 10,
              parkwayMi: Math.round(destPos * 10) / 10,
@@ -433,7 +459,7 @@ const Access = (() => {
              totalMi: Math.round((destPos + approachLegMi) * 10) / 10 };
   }
 
-  return { ROAD_FACTOR, approachMi, accessPoints, bestAccessPoints, planFuel };
+  return { ROAD_FACTOR, approachMi, accessPoints, bestAccessPoints, planFuel, exitReserve };
 })();
 
 /* Address lookup. The only part of this app that needs the network.
