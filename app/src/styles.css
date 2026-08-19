@@ -306,3 +306,47 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
   .place-popup .leaflet-popup-content { width: min(300px, 78vw) !important; }
   .place-popup .preview { max-height: 26vh; }
 }
+
+/* ---- map key ------------------------------------------------------------------
+ * Anchored bottom-left, above Leaflet's own controls, and collapsible. A rider who has
+ * learned the colours should not have to look at it forever; a rider who has not should
+ * never have to guess. Collapsed state is remembered.
+ */
+.legend {
+  position: absolute; left: 10px; bottom: 22px; z-index: 500;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); max-width: min(280px, calc(100vw - 24px));
+  font-size: 12px; overflow: hidden;
+}
+.legend-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; min-height: 34px; padding: 6px 10px;
+  background: none; border: 0; color: var(--fg);
+  font: 600 11px/1 var(--font); letter-spacing: .08em; text-transform: uppercase;
+  cursor: pointer;
+}
+.legend.shut { border-radius: 999px; }
+.legend.shut .legend-head { min-height: var(--tap); min-width: var(--tap); }
+.legend-toggle { color: var(--dim); font-size: 13px; }
+.legend-body { padding: 2px 10px 10px; max-height: 46vh; overflow-y: auto; }
+.legend-group {
+  margin: 8px 0 4px; color: var(--faint);
+  font: 600 10px/1 var(--font); letter-spacing: .1em; text-transform: uppercase;
+}
+.legend-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.legend-swatch { flex: 0 0 auto; display: block; }
+.legend-swatch.pin { width: 11px; height: 11px; border-radius: 50%; }
+.legend-swatch.line { width: 18px; height: 4px; border-radius: 2px; }
+.legend-label { color: var(--fg); }
+.legend-note { color: var(--faint); font-size: 11px; line-height: 1.45; }
+.legend-row .legend-note { margin-left: auto; padding-left: 8px; text-align: right; }
+.legend-body > .legend-note { margin-top: 10px; }
+
+@media (max-width: 860px) {
+  /* On a phone the map pane is short and the legend would eat it. Collapsed by habit
+     here, and capped so it can never cover more than a third of the map. */
+  .legend { left: 8px; bottom: 8px; font-size: 11.5px; max-width: calc(100vw - 84px); }
+  .legend-body { max-height: 30vh; }
+  .legend-row .legend-note { display: none; }
+}

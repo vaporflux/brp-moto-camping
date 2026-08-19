@@ -35,6 +35,8 @@
     filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
     search: '',
     showClosed: true,
+    legendOpen: true,          // a map of unexplained dots is worse than a busy corner
+    pinMode: false,            // map taps only place a pin when the rider asks for it
     checklist: {},
     device: 'xt2'
   };
@@ -49,6 +51,12 @@
         start: state.start, accessMp: state.accessMp,
         finish: state.finish, endPoint: state.endPoint,
         stayWithinMi: state.stayWithinMi,
+        // Display preferences, so the app stops re-teaching the rider what it already told
+        // them. pinMode is deliberately NOT saved: a pending map tap should not survive a
+        // reload and hijack the next touch.
+        legendOpen: state.legendOpen, filters: state.filters,
+        stayKind: state.stayKind, stayShowers: state.stayShowers,
+        stayToilets: state.stayToilets,
         // Cached road geometry rides along with the trip. Routing needs signal; riding
         // does not, so a trip planned at home keeps its real roads in a dead zone.
         roads: Directions.dump()
@@ -461,6 +469,9 @@
 
     const alt = el('div', 'btn-row');
     alt.style.marginTop = '8px';
+    const pin = el('button', `btn sm ${state.pinMode ? 'primary' : 'ghost'}`,
+                   state.pinMode ? 'Now tap the map\u2026' : 'Drop a pin on the map');
+    pin.onclick = () => { state.pinMode = !state.pinMode; render(); };
     const here = el('button', 'btn sm ghost', 'Use my location');
     here.onclick = () => {
       if (!navigator.geolocation) { status.textContent = 'This browser has no location access.'; return; }
@@ -471,7 +482,7 @@
         () => { status.textContent = 'Location denied or unavailable.'; },
         { timeout: 10000 });
     };
-    alt.append(here);
+    alt.append(pin, here);
     sec.append(alt);
     return sec;
   }
@@ -660,6 +671,18 @@
                  : 'Not recorded'],
       ['Getting in', c.access], ['Why it works', c.standout],
       ['Watch out', c.watchout], ['Food', c.food], ['Phone', c.phone],
+      // Fuel carries two independent answers and they must not be merged: does a pump
+      // exist, and can you actually get to it in 2026.
+      ['Fuel', c.fuelGrade],
+      ['Checked', c.fuelConfidence
+        ? (c.fuelConfidence === 'verified' ? 'Verified against published sources'
+           : `Confidence: ${c.fuelConfidence}`) : null],
+      ['Stations', (c.stations || []).length
+        ? c.stations.map(st => [st.name || st.brand,
+                                st.hours ? `(${st.hours})` : null,
+                                st.mi_straight != null ? `${st.mi_straight} mi` : null]
+                               .filter(Boolean).join(' ')).join('\n')
+        : null],
       // Google's contribution. A rating with no count behind it says nothing, so the
       // count travels with it.
       ['Rating', c.rating != null
@@ -686,7 +709,10 @@
         + `You can still get here, but not straight off the Parkway.`));
     }
     body.append(el('div', 'tiny',
-      c.source === 'curated' ? 'Researched and verified for this planner.'
+      c.kind === 'fuel'
+        ? 'There is no fuel on the Parkway itself. Every one of these is a ride off it and '
+          + 'back. Run build/verify_fuel.py to check these against Google.'
+      : c.source === 'curated' ? 'Researched and verified for this planner.'
       : c.source === 'osm' && c.verified
         ? 'Located from OpenStreetMap, confirmed against Google. OpenStreetMap places the '
           + 'milepost; Google supplies the contact details.'
@@ -702,15 +728,16 @@
       if (layers.preview) layers.preview.clearLayers();
       state.previewId = null;
     };
-    const add = el('button', 'btn primary', 'Stay here');
+    const isFuel = c.kind === 'fuel';
+    const add = el('button', 'btn primary', isFuel ? 'Add as a fuel stop' : 'Stay here');
     add.onclick = () => {
-      const stop = BRP.placeStop(c);
+      const stop = isFuel ? BRP.asStop(c._fuel) : BRP.placeStop(c);
       dismiss();
       state.destQuery = '';
       state.addingStop = false;
       addStop(stop);
     };
-    const shut = el('button', 'btn ghost', 'Not this one');
+    const shut = el('button', 'btn ghost', isFuel ? 'Close' : 'Not this one');
     shut.onclick = () => { dismiss(); render(); };
     row.append(add, shut);
     if (c.url) {
@@ -1600,11 +1627,102 @@
     layers.route = L.layerGroup().addTo(map);
     layers.preview = L.layerGroup().addTo(map);
 
+    // A bare tap on the map used to open a browser prompt asking to name a custom stop.
+    // On a phone, panning with one finger lands as a tap often enough that the prompt
+    // became a regular interruption. It now only fires when the rider has explicitly
+    // asked to drop a pin.
     map.on('click', e => {
-      const name = prompt('Name this stop:', 'Custom stop');
-      if (name) addStop(BRP.customStop(e.latlng.lat, e.latlng.lng, name));
+      if (!state.pinMode) return;
+      state.pinMode = false;
+      state.start = { lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5),
+                      label: `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}` };
+      save();
+      render();
     });
+    refreshLegend();
     drawMarkers();
+  }
+
+  /* The map's whole vocabulary, in one place.
+   *
+   * The legend used to be nowhere and the colours were literals scattered through
+   * drawMarkers and drawRoute. A legend written separately from the code that draws is a
+   * legend that goes stale, so both read this.
+   */
+  const MAPKEY = {
+    lines: [
+      { color: '#5b93b8', label: 'Parkway open', note: 'rideable in 2026' },
+      { color: '#c8552f', label: 'Parkway closed', note: 'dashed — Helene damage and roadworks',
+        dash: true },
+      { color: '#e0a33e', label: 'Your route', note: 'the ride as planned', weight: 5 },
+      { color: '#7fa35c', label: 'Road legs', note: 'to the Parkway, off to camp, home' },
+      { color: '#a9b39c', label: 'Straight-line estimate', note: 'no road route came back',
+        dash: true }
+    ],
+    places: [
+      { color: '#e0a33e', label: 'Top pick' },
+      { color: '#c8552f', label: 'Motorcycle camp' },
+      { color: '#7fa35c', label: 'Campground' },
+      { color: '#5b93b8', label: 'Hotel or motel' }
+    ],
+    fuel: [
+      { color: '#5b93b8', label: 'Fuel — usable' },
+      { color: '#e0a33e', label: 'Fuel — unconfirmed' },
+      { color: '#c8552f', label: 'Fuel — do not rely on it' },
+      { color: '#6b6b6b', label: 'Fuel — unreachable in 2026' }
+    ]
+  };
+
+  const PLACE_COLOR = c => c.kind === 'hotel' ? '#5b93b8'
+                         : c.moto ? '#c8552f'
+                         : c.tier === 'top' ? '#e0a33e' : '#7fa35c';
+  const FUEL_COLOR = f => ({ usable: '#5b93b8', usable_via_detour: '#5b93b8',
+                             unconfirmed: '#e0a33e', do_not_rely: '#c8552f',
+                             unreachable: '#6b6b6b' }[f.plan_grade] || '#5b93b8');
+
+  /* A legend the rider can collapse. Open by default the first time, because a map of
+   * unexplained coloured dots is the thing being fixed; remembered thereafter. */
+  function mapLegend() {
+    const box = el('div', `legend${state.legendOpen ? '' : ' shut'}`);
+    const head = el('button', 'legend-head');
+    head.append(el('span', null, 'Map key'));
+    head.append(el('span', 'legend-toggle', state.legendOpen ? '\u2715' : '?'));
+    head.setAttribute('aria-expanded', String(!!state.legendOpen));
+    head.onclick = () => { state.legendOpen = !state.legendOpen; save(); render(); };
+    box.append(head);
+    if (!state.legendOpen) return box;
+
+    const body = el('div', 'legend-body');
+    const group = (title, items, kind) => {
+      body.append(el('div', 'legend-group', title));
+      items.forEach(it => {
+        const row = el('div', 'legend-row');
+        const sw = el('span', `legend-swatch ${kind}`);
+        sw.style.background = it.color;
+        if (it.dash) sw.style.backgroundImage =
+          `repeating-linear-gradient(90deg, ${it.color} 0 4px, transparent 4px 7px)`;
+        row.append(sw);
+        row.append(el('span', 'legend-label', it.label));
+        if (it.note) row.append(el('span', 'legend-note', it.note));
+        body.append(row);
+      });
+    };
+    group('Lines', MAPKEY.lines, 'line');
+    group('Places to stay', MAPKEY.places, 'pin');
+    group('Fuel', MAPKEY.fuel, 'pin');
+    body.append(el('div', 'legend-note',
+      'A bigger dot is a place researched for this planner. Tap any marker to see it; '
+      + 'nothing is added to your trip until you say so.'));
+    box.append(body);
+    return box;
+  }
+
+  function refreshLegend() {
+    const host = $('#map');
+    if (!host) return;
+    const old = host.querySelector('.legend');
+    if (old) old.remove();
+    host.append(mapLegend());
   }
 
   function dot(color, size = 11) {
@@ -1614,19 +1732,31 @@
     });
   }
 
+  /* Every marker behaves the same way: it says what it is on hover, and shows its card
+   * on tap. Nothing joins the trip without a second, deliberate press.
+   *
+   * It did not used to. Campground markers had a tooltip and fuel markers had none, so
+   * half the dots on the map explained themselves and half sat there silent. Worse, a tap
+   * on a fuel dot called addStop() outright -- one stray touch on a phone and a fuel stop
+   * appeared in the itinerary with no card, no confirmation and no obvious way to see what
+   * had just happened.
+   */
   function drawMarkers() {
     layers.stops.clearLayers();
-    const COL = { top: '#e0a33e', solid: '#7fa35c', backup: '#8d9683', moto: '#c8552f',
-                  hotel: '#5b93b8' };
+
     if (state.filters.campground) {
       (D.places || []).forEach(c => {
-        const col = c.kind === 'hotel' ? COL.hotel
-                  : c.moto ? COL.moto : (COL[c.tier] || COL.solid);
-        // A bare dot tells a rider nothing, so every marker carries its name on hover and
-        // its detail on click -- the same card the list shows.
-        L.marker([c.lat, c.lon], { icon: dot(col, c.source === 'curated' ? 12 : 9) })
-          .bindTooltip(`${c.name}${c.mp != null ? ` — MP ${c.mp.toFixed(1)}` : ''}`,
-                       { direction: 'top' })
+        const label = [c.name,
+                       c.mp != null ? `MP ${c.mp.toFixed(1)}` : null,
+                       c.kind === 'hotel' ? 'hotel or motel'
+                         : c.moto ? 'motorcycle camp' : 'campground',
+                       c.off_parkway_mi != null && c.off_parkway_mi >= 0.3
+                         ? `${c.off_parkway_mi} mi off the Parkway` : 'on the Parkway']
+                      .filter(Boolean).join(' · ');
+        L.marker([c.lat, c.lon],
+                 { icon: dot(PLACE_COLOR(c), c.source === 'curated' ? 12 : 9),
+                   keyboard: true, title: label, alt: label })
+          .bindTooltip(label, { direction: 'top', sticky: true })
           .on('click', () => {
             state.previewId = c.id;
             state.tab = 'plan';
@@ -1637,18 +1767,48 @@
           .addTo(layers.stops);
       });
     }
+
     if (state.filters.fuel) {
       D.fuel.forEach(f => {
-        const col = { usable: '#5b93b8', usable_via_detour: '#5b93b8', unconfirmed: '#e0a33e',
-                      do_not_rely: '#c8552f', unreachable: '#6b6b6b' }[f.plan_grade] || '#5b93b8';
-        L.marker([f.parkway_lat, f.parkway_lon], { icon: dot(col, 9) })
-          .bindPopup(`<h3>FUEL ${f.exit_road}</h3>MP ${f.mp} · ${f.town}<br>` +
-                     `${f.plan_grade.replace(/_/g, ' ')}${f.warning ? '<br><br>' + f.warning : ''}` +
-                     `${f.closure_note ? '<br><br>' + f.closure_note : ''}`)
-          .on('click', () => addStop(BRP.asStop(f)))
+        const grade = (f.plan_grade || '').replace(/_/g, ' ');
+        const at = f.parkway_lat != null
+          ? [f.parkway_lat, f.parkway_lon] : BRP.coordAtMp(f.mp);
+        const label = [`FUEL ${f.exit_road}`, `MP ${f.mp}`, f.town, grade,
+                       f.detour_plan_mi ? `${f.detour_plan_mi} mi off` : null]
+                      .filter(Boolean).join(' · ');
+        L.marker(at, { icon: dot(FUEL_COLOR(f), 9), keyboard: true,
+                       title: label, alt: label })
+          .bindTooltip(label, { direction: 'top', sticky: true })
+          .on('click', () => {
+            state.previewId = `fuel-${f.mp}`;
+            render();
+            previewOnMap(fuelAsPlace(f, at));
+          })
           .addTo(layers.stops);
       });
     }
+  }
+
+  /* A fuel exit, shaped like a place so it can use the same card. The rider gets the same
+   * read-then-decide flow they get for a campground, instead of a tap that silently
+   * commits. */
+  function fuelAsPlace(f, at) {
+    const grade = {
+      usable: 'Usable', usable_via_detour: 'Usable, via the signed detour',
+      unconfirmed: 'Unconfirmed — nobody has checked this one',
+      do_not_rely: 'Do not rely on this one',
+      unreachable: 'Unreachable in 2026'
+    }[f.plan_grade] || f.plan_grade;
+    return {
+      id: `fuel-${f.mp}`, name: `Fuel — ${f.exit_road}`, kind: 'fuel',
+      lat: at[0], lon: at[1], mp: f.mp,
+      off_parkway_mi: f.detour_plan_mi != null ? f.detour_plan_mi : null,
+      address: f.town, state: f.state,
+      showers: null, toilets: null, source: 'curated',
+      fuelGrade: grade, fuelConfidence: f.confidence,
+      watchout: f.warning || f.closure_note || null,
+      stations: f.stations || [], _fuel: f
+    };
   }
 
   function drawRoute() {
@@ -1787,7 +1947,7 @@
     document.querySelectorAll('.tabs button').forEach(b =>
       b.setAttribute('aria-selected', String(b.dataset.tab === state.tab)));
     renderActiveTab();
-    if (map) { drawMarkers(); drawRoute(); }
+    if (map) { drawMarkers(); drawRoute(); refreshLegend(); }
     if (state.start && state.stops.length) {
       const trip = itinerary();
       if (trip && !trip.error) ensureRoads(trip);
