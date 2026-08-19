@@ -91,6 +91,12 @@ def build(model, net, curated, osm=None, enrichment=None):
             g = (rec or {}).get("match")
             if not g:
                 continue      # Google could not confirm it exists; it does not ship
+            # A campground Google reports as permanently closed is worse than no entry at
+            # all: the rider rides there, in the dark, at the end of a long day, and finds
+            # a padlock. Temporarily closed is different -- those reopen -- so those stay,
+            # carrying the status so the card can say so.
+            if g.get("business_status") == "CLOSED_PERMANENTLY":
+                continue
         seen.add(key)
         seg = net.segment_at_mp(p["mp"])
         out.append({
@@ -151,6 +157,8 @@ def summary(places):
         "within_5mi": sum(1 for p in places if p["off_parkway_mi"] <= 5),
         "within_15mi": sum(1 for p in places if p["off_parkway_mi"] <= 15),
         "verified": sum(1 for p in places if p.get("verified")),
+        "closed_temporarily": sum(1 for p in places
+                                  if p.get("business_status") == "CLOSED_TEMPORARILY"),
         "with_phone": sum(1 for p in places if p.get("phone")),
         "with_url": sum(1 for p in places if p.get("url")),
     }
