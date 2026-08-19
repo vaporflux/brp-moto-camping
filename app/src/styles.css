@@ -67,7 +67,29 @@ button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 /* ---- shell ---------------------------------------------------------------- */
-#app { display: flex; height: 100%; width: 100%; overflow: hidden; }
+/* The notch, the status bar and the home indicator.
+ *
+ * The page asks for viewport-fit=cover and declares a black-translucent status bar, which
+ * together mean the web app owns the WHOLE screen on an iPhone -- including the strip
+ * behind the clock, wi-fi and battery. On a phone the map is the top element, so the map's
+ * own controls were drawing up there: the zoom buttons landed on the clock and "Show the
+ * full map" landed under the battery, where iOS reserves the corner for the Control Centre
+ * swipe and a tap never reaches the page at all.
+ *
+ * Insetting the shell fixes every top-anchored control at once, rather than each one
+ * carrying its own copy of the rule and the next one added forgetting to. The strip that
+ * opens up shows the page background, which is dark, so the white status text stays
+ * readable over it.
+ *
+ * env() resolves to 0 wherever there is no notch -- desktop, and Safari with its own
+ * chrome on top -- so this costs nothing when it is not needed. */
+#app {
+  display: flex; height: 100%; width: 100%; overflow: hidden;
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  background: var(--ink);
+}
 #map { flex: 1; height: 100%; background: var(--map-bg); z-index: 1; }
 
 #side {
@@ -271,7 +293,6 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
   #map { height: 38vh; }
 }
 @media (display-mode: standalone) {
-  header { padding-top: max(10px, env(safe-area-inset-top)); }
   .pane { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -533,15 +554,21 @@ button, .chip, [role="tab"] { user-select: none; -webkit-user-select: none; }
   #app.map-full #side { display: none; }
   #app.map-full #map { height: calc(100dvh - env(safe-area-inset-top, 0px)); }
   #app.list-full #map { height: 0; min-height: 0; border: 0; }
-  #app.list-full #maptoggle { top: max(10px, env(safe-area-inset-top)); }
+  /* Full-screen map is the only state where the map reaches the bottom of the phone, so
+     it is the only one where the key, the locate button and Leaflet's own attribution can
+     end up under the home indicator. */
+  #app.map-full .legend { bottom: calc(8px + env(safe-area-inset-bottom)); }
+  #app.map-full #gpsbtn { bottom: calc(26px + env(safe-area-inset-bottom)); }
+  #app.map-full .leaflet-bottom { margin-bottom: env(safe-area-inset-bottom); }
 }
 
 /* ---- installed as an app --------------------------------------------------------
  * Standalone has no browser chrome, so the page owns the notch and the home indicator.
  */
 @media (display-mode: standalone) {
-  header { padding-top: max(10px, env(safe-area-inset-top)); }
-  #side { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+  /* The header does NOT inset itself. #app already did it for the whole shell, and on a
+     phone the header is below the map -- a second inset put a band of empty panel in the
+     middle of the screen, above the logo. Same for #side's left/right. */
   .pane { padding-bottom: max(24px, calc(env(safe-area-inset-bottom) + 16px)); }
   /* Overscroll bounce reveals the page background behind a standalone app and looks broken. */
   body { overscroll-behavior: none; }

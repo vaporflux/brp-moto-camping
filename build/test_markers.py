@@ -271,6 +271,41 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     }, 400));
   });
 
+  // The notch. env(safe-area-inset-*) cannot be emulated in a desktop Chromium, so the
+  // inset is injected at the same place the real rule applies it and the consequence is
+  // what gets checked: with a 59px status bar, nothing interactive may sit under it, and
+  // nothing may gain a SECOND inset further down the page.
+  const INSET = 59;
+  // #maptoggle only exists below 860px -- it is the phone-only map/list swap -- so this
+  // has to be measured at phone size or the very control that failed is display:none.
+  await p.setViewportSize({ width: 390, height: 844 });
+  const safeArea = await p.evaluate(inset => {
+    const st = document.createElement('style');
+    st.textContent = `#app { padding-top: ${inset}px !important; }`;
+    document.head.append(st);
+    // A phone: the map is the top element, so its controls are the ones at risk.
+    document.querySelector('#app').classList.add('map-full');
+    return new Promise(res => setTimeout(() => {
+      const boxes = {};
+      for (const [name, sel] of [['maptoggle', '#maptoggle'], ['gps', '#gpsbtn'],
+                                 ['zoom', '.leaflet-control-zoom'], ['key', '.legend']]) {
+        const n = document.querySelector(sel);
+        boxes[name] = n ? n.getBoundingClientRect().top : null;
+      }
+      const header = document.querySelector('header');
+      res({ boxes,
+            headerPadTop: parseFloat(getComputedStyle(header).paddingTop),
+            appBottom: document.querySelector('#app').getBoundingClientRect().bottom,
+            viewport: window.innerHeight,
+            scroll: document.documentElement.scrollHeight - window.innerHeight });
+    }, 500));
+  }, INSET);
+  await p.evaluate(() => {
+    document.querySelector('#app').classList.remove('map-full');
+    [...document.querySelectorAll('style')].pop().remove();
+  });
+  await p.setViewportSize({ width: 1280, height: 900 });
+
   const key = await p.evaluate(() => ({
     heads: [...document.querySelectorAll('.key-head')].map(n => n.textContent),
     rows: document.querySelectorAll('.key-row').length,
@@ -283,7 +318,7 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   }));
 
   console.log(JSON.stringify({ wide, grey, named, fuelFills, stuck, sel, toggle,
-                               gpsOff, gps, panned, stopped, key, errors }));
+                               gpsOff, gps, panned, stopped, safeArea, key, errors }));
   await b.close();
 })();
 """
@@ -436,6 +471,20 @@ def main():
     check("and once more switches it off", not st["marker"] and st["pressed"] == "false",
           json.dumps(st))
     check("which is remembered as off", st["stored"] is False, json.dumps(st))
+
+    print("\nnothing hides behind the notch")
+    sa = js["safeArea"]
+    inset = 59
+    for name, top in sa["boxes"].items():
+        check(f"the {name} control clears the status bar",
+              top is not None and top >= inset, f"top {top} < {inset}")
+    # The header used to add the inset a second time. On a phone it sits below the map, so
+    # that opened a band of empty panel in the middle of the screen, above the logo.
+    check("the header does not inset itself a second time", sa["headerPadTop"] < 20,
+          f"{sa['headerPadTop']}px of top padding")
+    check("and the inset does not push the shell off the bottom of the screen",
+          sa["appBottom"] <= sa["viewport"] + 1 and sa["scroll"] <= 1,
+          json.dumps({k: sa[k] for k in ("appBottom", "viewport", "scroll")}))
 
     check("the page raised no errors", not js["errors"], str(js["errors"][:3]))
 
