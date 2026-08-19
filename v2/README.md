@@ -52,6 +52,27 @@ in one `state` object and persists to `localStorage` on every render.
 To add a panel: add a `<button data-tab="x">` in `shell.html`, a `<div class="pane"
 id="pane-x">`, a `renderX()`, and a line in `render()`.
 
+## The Plan tab
+
+The flow is: **where you start → which access point → your bike's range → stops → days.**
+
+- **Start** takes an address, a town, `lat, lon`, or the browser's location. Address
+  lookup is the *only* part of this app that needs a network — it calls Nominatim. When it
+  fails it says so and points at the offline routes in (tap the map, type coordinates);
+  nothing else stops working.
+- **Access point** is chosen by *"get on the Parkway soonest"* — least road miles before
+  you are riding it. This matters more than it sounds: ranked by total distance instead, a
+  Charlotte→Cherokee trip enters at MP 469.1 and rides **0.1 mi** of Parkway. Ranked by
+  ride-in it enters near Asheville and rides 86.5. "Shortest overall" is one tap away for
+  when the campsite, not the road, is the point.
+- **Fuel** comes from the rider's tank range, never an assumed bike. A detour burns range
+  *both ways*, so a 15 mi detour costs 30 mi of tank — which is what makes MP 411.8 a trap.
+  The approach leg is deliberately **not** charged against the tank: this dataset maps fuel
+  at Parkway exits only, and a 130 mi ride in passes plenty of stations it knows nothing
+  about. It warns instead.
+- The rider's home joins the route as a `start` stop, so day mileage and the exported GPX
+  both begin at the house rather than dropping them onto the Parkway from nowhere.
+
 ## Behaviour worth knowing before you change it
 
 - **Days are the rider's explicit breaks.** `autoSplit()` proposes them by mileage but

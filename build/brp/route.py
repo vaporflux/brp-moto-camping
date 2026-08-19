@@ -211,7 +211,10 @@ def build_day(model, net, junctions, stops, spacing_mi=5.0):
                      for a, b in legs if b["mp"] < a["mp"]]
         warnings.append("stops are not in milepost order; the day backtracks: "
                         + "; ".join(reversals))
-    big = [s for s in stops if s.get("off_parkway_mi", 0) >= 10]
+    # The rider's start point is an origin, not a detour: its distance from the Parkway
+    # is the ride in, not something they double back over.
+    big = [s for s in stops
+           if s.get("off_parkway_mi", 0) >= 10 and s.get("kind") != "start"]
     for s in big:
         warnings.append(f"{s['name']} is {s['off_parkway_mi']:.0f} mi off the Parkway "
                         f"-- roughly {s['off_parkway_mi'] * 2:.0f} mi round trip")
