@@ -122,6 +122,33 @@ def main():
     with open(f"{OUT}/quality-report.json", "w") as f:
         json.dump(report, f, indent=1)
 
+    # Browser bundle. Ships the per-vertex milepost array so the client does not have to
+    # redo the chord->arc calibration in JavaScript -- the model is decided here, once,
+    # and the page consumes its output. Coordinates round to 5 dp (~1.1 m), well under
+    # the milepost model's own 0.34 mi resolution.
+    r5 = lambda v: round(v, 5)
+    browser = {
+        "schema": bundle["schema"],
+        "as_of": closures_raw["as_of"],
+        "closures_source": closures_raw["source"],
+        "parkway": [[r5(p[0]), r5(p[1])] for p in model.pts],
+        "parkway_mp": [round(model.mp_at_index(i), 3) for i in range(len(model.pts))],
+        "segments": bundle["segments"],
+        "segment_geometry": [[[r5(p[0]), r5(p[1])] for p in s.pts] for s in net.segments],
+        "components": bundle["components"],
+        "dead_ends": bundle["dead_ends"],
+        "closures": bundle["closures"],
+        "campgrounds": campgrounds,
+        "fuel": fuel,
+        "junctions": jx,
+        "junction_coverage": bundle["junction_coverage"],
+        "milepost_accuracy": bundle["milepost_model"]["accuracy"],
+        "milepost_coverage_gaps": bundle["milepost_model"]["coverage_gaps_mi"],
+    }
+    with open(f"{OUT}/browser-data.json", "w") as f:
+        json.dump(browser, f, separators=(",", ":"))
+    print(f"browser-data.json   {os.path.getsize(f'{OUT}/browser-data.json')/1024:.0f} KB")
+
     size = os.path.getsize(f"{OUT}/planner-data.json")
     print(f"planner-data.json   {size/1024:.0f} KB")
     print(f"  segments {len(net.segments)}  components {len(net.components)}  "

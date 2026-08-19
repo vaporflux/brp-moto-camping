@@ -31,6 +31,9 @@ MIN_POINT_SPACING_MI = 0.5  # below this, points crowd and the device renames th
 # instruction however the milepost model rounds, and the model itself is only good to
 # ~0.34 mi, so a point placed exactly at a boundary can land on either side of it.
 CLOSURE_CLEARANCE_MI = 0.5
+# Below this, two stops share an access milepost and the leg between them has no Parkway
+# geometry at all.
+ZERO_LEG_MI = 0.02
 MAX_TOTAL_RTEPT = 50        # BMW ConnectedRide Navigator total-route-point cap
 MAX_VIA_RTEPT = 25          # under the 29-30 via cap on zumo XT / 595 / Navigator VI
 MAX_TRKPT = 10000
@@ -68,7 +71,22 @@ def slice_parkway(model, net, mp_a, mp_b):
             kept.append(p)
     if mp_b < mp_a:
         kept.reverse()
-    return kept
+    return _dedupe_coords(kept)
+
+
+def _dedupe_coords(points, tol=1e-7):
+    """Drop consecutive duplicate coordinates.
+
+    A zero-length leg -- two stops sharing an access milepost, which is exactly the
+    campground-off-a-fuel-exit case -- otherwise emits the same coordinate two or three
+    times, and those duplicates accumulate into the track.
+    """
+    out = []
+    for p in points:
+        if out and abs(p[0] - out[-1][0]) < tol and abs(p[1] - out[-1][1]) < tol:
+            continue
+        out.append(p)
+    return out
 
 
 def _placeable(net, mp, clearance=CLOSURE_CLEARANCE_MI):
@@ -158,9 +176,10 @@ def build_day(model, net, junctions, stops, spacing_mi=5.0):
     if len(stops) < 2:
         raise RouteError("a day needs at least a start and an end")
 
-    rtepts = [{"mp": stops[0]["mp"], "lat": stops[0]["lat"], "lon": stops[0]["lon"],
-               "type": "via", "name": stops[0]["name"], "kind": stops[0].get("kind"),
-               "reason": "day start"}]
+    # Carry the stop's own fields through. Rebuilding the dict field-by-field silently
+    # dropped `comment`, which is what fills the <cmt> on each waypoint -- the milepost
+    # and the fuel warning that GPX-REFERENCE.md's worked example puts there.
+    rtepts = [{**stops[0], "type": "via", "reason": "day start"}]
     track = []
     parkway_mi = 0.0
     detour_mi = 0.0
@@ -168,17 +187,18 @@ def build_day(model, net, junctions, stops, spacing_mi=5.0):
     for a, b in zip(stops, stops[1:]):
         leg = place_leg_points(model, net, junctions, a["mp"], b["mp"], spacing_mi)
         rtepts.extend(leg)
-        rtepts.append({"mp": b["mp"], "lat": b["lat"], "lon": b["lon"], "type": "via",
-                       "name": b["name"], "kind": b.get("kind"), "reason": "stop"})
-        seg = slice_parkway(model, net, a["mp"], b["mp"])
-        if track and seg and track[-1] == seg[0]:
-            seg = seg[1:]
-        track.extend(seg)
+        rtepts.append({**b, "type": "via", "reason": "stop"})
+        # A zero-length leg contributes no Parkway geometry. It happens whenever two
+        # stops share an access milepost -- a campground reached from a fuel exit -- and
+        # slicing it emits the same one or two coordinates again, which lands in the
+        # track as a stutter. The travel between them is off-Parkway anyway.
+        if abs(b["mp"] - a["mp"]) >= ZERO_LEG_MI:
+            track.extend(slice_parkway(model, net, a["mp"], b["mp"]))
         parkway_mi += abs(b["mp"] - a["mp"])
         detour_mi += a.get("off_parkway_mi", 0.0) + b.get("off_parkway_mi", 0.0)
 
     rtepts = _dedupe(rtepts)
-    track = _thin_track(track, MAX_TRKPT)
+    track = _thin_track(_dedupe_coords(track), MAX_TRKPT)
 
     warnings = []
     # Backtracking is legal -- the Mt Mitchell spur is an out-and-back by definition --
