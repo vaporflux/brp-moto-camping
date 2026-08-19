@@ -140,6 +140,25 @@ and a running animation makes that stale.
 Every place also carries a hover tooltip and a click handler on the map itself, so the dots
 are identifiable without going near the list.
 
+### Directions
+
+The itinerary carries one continuous set of directions from the rider's door to the
+campsite and back — ride in, Parkway, hop off, Parkway, ride out — numbered in travel
+order. Nothing is behind a button. A trip is not planned until the rider knows which roads
+get them to the Parkway and off it again, so a button for it was only ever a step in the
+way.
+
+**Parkway legs are written, not fetched.** Between junctions the Parkway has no
+alternatives, so a router adds nothing: the leg is generated from the milepost model —
+which way to turn on joining, how far, which fuel exits pass, and any closure crossed. That
+also means the Parkway half of the directions works with no signal and costs nothing.
+
+**Off-Parkway legs are fetched once and cached.** `ensureRoads()` runs on every render and
+is safe to: `Directions.fetchLeg` is keyed on rounded endpoints, so changing a tank size or
+a filter refetches nothing, and only genuinely new legs cost a request. Failures are cached
+too, so a dead endpoint is not hammered — which is why the retry button has to call
+`Directions.forget()` first.
+
 ### Roads off the Parkway
 
 The Parkway needs no router: between junctions it has no alternatives, so the centerline

@@ -1233,7 +1233,11 @@ const Directions = (() => {
     return val;
   }
 
-  return { fetchLeg, seed, dump, peek, key };
+  // A failure is cached so a dead endpoint is not hammered on every render. Retrying
+  // therefore has to clear it first.
+  const forget = (a, b) => cache.delete(key(a, b));
+
+  return { fetchLeg, seed, dump, peek, key, forget };
 })();
 </script>
 <script>/* GPX 1.1 export. Mirrors build/brp/gpx.py and build/brp/gpxval.py.
@@ -1462,6 +1466,7 @@ const Gpx = (() => {
     previewId: null,           // place shown on the map but not yet committed
     googleResults: null,       // live Google Places hits, never persisted
     googleNote: null,          // what the last Google search found, and what got filtered
+    roadStatus: null,          // shown while road legs are being fetched
     tab: 'plan',
     filters: { campground: true, fuel: true, motoOnly: false, topOnly: false },
     search: '',
@@ -2406,7 +2411,7 @@ const Gpx = (() => {
     }
     wrap.append(steps);
 
-    wrap.append(sectionRoads(trip));
+    wrap.append(sectionDirections(trip));
 
     if (!f.ok) {
       const bad = el('div', 'section');
@@ -2426,82 +2431,152 @@ const Gpx = (() => {
     return wrap;
   }
 
-  /* Turn-by-turn for the legs that leave the Parkway.
+  /* Directions for the whole trip, in order, with nothing gated behind a button.
    *
-   * These are the legs the rider cannot work out from a milepost, and the ones the Garmin
-   * would otherwise route on its own guess. Fetching them also gives the exporter real
-   * geometry to hang shaping points on. */
-  function sectionRoads(trip) {
+   * The Parkway legs need no router -- between junctions it has no alternatives -- so they
+   * are written from the milepost model: which way to turn on joining, how far, and which
+   * fuel exits pass on the way. The off-Parkway legs come from the routing service. A
+   * rider reading top to bottom gets one continuous set of instructions from their door to
+   * the campsite and back, which is the point.
+   */
+  function sectionDirections(trip) {
     const sec = el('div', 'section');
-    sec.append(el('h2', null, 'Roads off the Parkway'));
+    sec.append(el('h2', null, 'Directions'));
+
+    if (state.roadStatus) {
+      sec.append(el('div', 'alert info', state.roadStatus));
+    }
+
     const legs = trip.roadLegs || [];
-    if (!legs.length) {
-      sec.append(el('p', 'tiny', 'Every stop on this trip is on the Parkway itself.'));
-      return sec;
-    }
+    const failed = legs.filter(l => { const r = Directions.peek(l.from, l.to); return r && !r.ok; });
 
-    const missing = legs.filter(l => {
-      const r = Directions.peek(l.from, l.to);
-      return !r || !r.ok;
+    // Interleave: ride in, then Parkway to each stop, the hop off to it, and out again.
+    const seq = [];
+    const legFor = id => legs.find(l => l.id === id);
+    seq.push({ kind: 'road', leg: legFor('in') });
+    let atMp = trip.chosen.mp;
+    state.stops.forEach(st => {
+      seq.push({ kind: 'parkway', from: atMp, to: st.mp, arriveAt: st });
+      const off = legFor(`off-${st.id}`);
+      if (off) seq.push({ kind: 'road', leg: off });
+      atMp = st.mp;
     });
-
-    if (missing.length) {
-      const row = el('div', 'btn-row');
-      const btn = el('button', 'btn sm',
-        `Get road directions (${missing.length} leg${missing.length > 1 ? 's' : ''})`);
-      const status = el('div', 'tiny');
-      status.style.marginTop = '6px';
-      btn.onclick = async () => {
-        btn.disabled = true;
-        status.textContent = 'Routing\u2026';
-        let failed = null;
-        for (const leg of missing) {
-          const r = await Directions.fetchLeg(leg.from, leg.to);
-          if (!r.ok) failed = r;
-        }
-        btn.disabled = false;
-        status.textContent = '';
-        if (failed) {
-          status.textContent = failed.hint
-            ? `${failed.error} ${failed.hint}`
-            : `${failed.error} Without it these legs stay straight-line estimates.`;
-        }
-        render();
-      };
-      row.append(btn);
-      sec.append(row, status);
-      sec.append(el('p', 'tiny',
-        'Needs a connection, once. The result is saved with the trip, so the roads and the '
-        + 'turn list are still there when you have no signal.'));
+    if (trip.exitPoint) {
+      // Name only, no milepost: the summary and the arrival line both prefix one, and
+      // "Continue to MP 382.5 — MP 382.5 — US 70" is what happens when both do.
+      seq.push({ kind: 'parkway', from: atMp, to: trip.exitPoint.mp,
+                 arriveAt: { name: trip.exitPoint.name }, isExit: true });
+      seq.push({ kind: 'road', leg: legFor('out') });
     }
 
-    legs.forEach(leg => {
-      const road = Directions.peek(leg.from, leg.to);
-      const card = el('details', 'turns');
-      const sum = el('summary');
-      sum.append(el('span', 's-name', leg.label));
-      sum.append(el('span', 's-meta', road && road.ok
-        ? `${road.distance_mi} mi by road \u00b7 about ${road.duration_min} min`
-        : 'straight-line estimate only'));
-      card.append(sum);
-      if (road && road.ok) {
-        const ol = el('ol', 'turn-list');
-        (road.legs || []).forEach(l => (l.steps || []).forEach(st => {
-          const li = el('li');
-          li.append(document.createTextNode(st.text));
-          if (st.distance_mi) li.append(el('span', 'turn-dist', `${st.distance_mi} mi`));
-          ol.append(li);
-        }));
-        card.append(ol.childElementCount ? ol
-          : el('p', 'tiny', 'No turn list came back for this leg.'));
-      } else {
-        card.append(el('p', 'tiny',
-          'No road route yet. The line on the map is a straight-line estimate, and the '
-          + 'exported GPX has no geometry for this leg — your device will pick its own way.'));
+    let n = 0;
+    seq.forEach(item => {
+      if (item.kind === 'parkway') {
+        sec.append(parkwayLeg(++n, item, trip));
+        return;
       }
-      sec.append(card);
+      if (!item.leg) return;
+      sec.append(roadLeg(++n, item.leg));
     });
+
+    if (failed.length) {
+      const box = el('div', 'alert warn');
+      const first = Directions.peek(failed[0].from, failed[0].to);
+      box.textContent = (first.hint || first.error || 'Road directions could not be fetched.')
+        + ' Those legs show as straight-line estimates, and the exported GPX has no geometry '
+        + 'for them — your device will pick its own way.';
+      sec.append(box);
+      const retry = el('button', 'btn sm ghost', 'Try the road directions again');
+      retry.style.marginTop = '8px';
+      retry.onclick = async () => {
+        retry.disabled = true;
+        // A failure is cached so a dead endpoint is not hammered; retrying has to clear it.
+        failed.forEach(l => Directions.forget(l.from, l.to));
+        await ensureRoads(trip);
+      };
+      sec.append(retry);
+    }
     return sec;
+  }
+
+  /* A Parkway leg, written from the milepost model rather than fetched. */
+  function parkwayLeg(n, item, trip) {
+    const card = el('details', 'turns');
+    card.open = true;
+    const dist = Math.abs(item.to - item.from);
+    const heading = item.to >= item.from ? 'south' : 'north';
+    const sum = el('summary');
+    sum.append(el('span', 's-name',
+      `${n}. ${item.isExit ? 'Ride the Parkway to your exit at' : 'Ride the Parkway to'} `
+      + `${item.arriveAt.name}`));
+    sum.append(el('span', 's-meta', `${dist.toFixed(1)} mi \u00b7 MP ${item.from.toFixed(1)} `
+      + `\u2192 ${item.to.toFixed(1)}`));
+    card.append(sum);
+
+    const ol = el('ol', 'turn-list');
+    const join = el('li');
+    join.append(document.createTextNode(
+      `Join the Blue Ridge Parkway at MP ${item.from.toFixed(1)} and head ${heading}.`));
+    ol.append(join);
+
+    // Fuel and closures the rider passes, in travel order -- the two things that matter on
+    // a road with no turns.
+    const lo = Math.min(item.from, item.to), hi = Math.max(item.from, item.to);
+    const passing = (trip.fuel.stops || []).filter(f => f.mp >= lo && f.mp <= hi);
+    passing.sort((a, b) => heading === 'south' ? a.mp - b.mp : b.mp - a.mp);
+    passing.forEach(f => {
+      const li = el('li');
+      li.append(document.createTextNode(
+        `MP ${f.mp} — leave the Parkway for fuel at ${[f.road, f.town].filter(Boolean).join(', ')}`
+        + `${f.detourMi ? ` (${f.detourMi} mi off, then back on)` : ''}.`));
+      li.style.color = 'var(--warn)';
+      ol.append(li);
+    });
+    (D.closures || []).filter(c => c.to_mp >= lo && c.from_mp <= hi).forEach(c => {
+      const li = el('li');
+      li.append(document.createTextNode(
+        `MP ${c.from_mp}–${c.to_mp} — ${c.reason}. `
+        + (c.detour ? `Follow the signed detour: ${c.detour}.` : 'No detour; the Parkway is severed here.')));
+      li.style.color = 'var(--danger)';
+      ol.append(li);
+    });
+
+    const arrive = el('li');
+    arrive.append(document.createTextNode(item.isExit
+      ? `Leave the Parkway at MP ${item.to.toFixed(1)} — ${item.arriveAt.name}.`
+      : `Continue to MP ${item.to.toFixed(1)} — ${item.arriveAt.name}.`));
+    ol.append(arrive);
+    card.append(ol);
+    return card;
+  }
+
+  /* An off-Parkway leg, from the routing service. */
+  function roadLeg(n, leg) {
+    const road = Directions.peek(leg.from, leg.to);
+    const card = el('details', 'turns');
+    card.open = true;
+    const sum = el('summary');
+    sum.append(el('span', 's-name', `${n}. ${leg.label}`));
+    sum.append(el('span', 's-meta', road && road.ok
+      ? `${road.distance_mi} mi \u00b7 about ${road.duration_min} min`
+      : road ? 'no road route — straight-line estimate' : 'working it out\u2026'));
+    card.append(sum);
+    if (road && road.ok) {
+      const ol = el('ol', 'turn-list');
+      (road.legs || []).forEach(l => (l.steps || []).forEach(st => {
+        const li = el('li');
+        li.append(document.createTextNode(st.text));
+        if (st.distance_mi) li.append(el('span', 'turn-dist', `${st.distance_mi} mi`));
+        ol.append(li);
+      }));
+      card.append(ol.childElementCount ? ol
+        : el('p', 'tiny', 'No turn list came back for this leg.'));
+    } else {
+      card.append(el('p', 'tiny', road
+        ? 'No road route for this leg yet.'
+        : 'Fetching the roads for this leg\u2026'));
+    }
+    return card;
   }
 
   function stepRow(marker, title, detail, level) {
@@ -2979,6 +3054,34 @@ const Gpx = (() => {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  /* Fetch the road legs as soon as the trip is complete enough to have them.
+   *
+   * These were behind a "Get road directions" button, which is a step in the way of
+   * something always needed: a trip is not planned until the rider knows which roads get
+   * them to the Parkway and off it again.
+   *
+   * Safe to call on every render. Directions.fetchLeg is cached on rounded endpoints, so
+   * adjusting a tank size or a filter refetches nothing, and a failure is cached too so a
+   * dead endpoint is not hammered. Only genuinely new legs cost a request.
+   */
+  let roadsInFlight = false;
+  async function ensureRoads(trip) {
+    if (roadsInFlight || !trip || trip.error) return;
+    const missing = (trip.roadLegs || []).filter(l => !Directions.peek(l.from, l.to));
+    if (!missing.length) return;
+    roadsInFlight = true;
+    state.roadStatus = `Working out the roads (${missing.length} leg`
+                     + `${missing.length > 1 ? 's' : ''})…`;
+    renderActiveTab();
+    try {
+      for (const leg of missing) await Directions.fetchLeg(leg.from, leg.to);
+    } finally {
+      roadsInFlight = false;
+      state.roadStatus = null;
+      render();
+    }
+  }
+
   function render() {
     save();
     Router.setProfile(state.device === 'xt2' ? 'xt2' : 'universal');
@@ -2988,11 +3091,19 @@ const Gpx = (() => {
     $('#pane-notes').hidden = state.tab !== 'notes';
     document.querySelectorAll('.tabs button').forEach(b =>
       b.setAttribute('aria-selected', String(b.dataset.tab === state.tab)));
+    renderActiveTab();
+    if (map) { drawMarkers(); drawRoute(); }
+    if (state.start && state.stops.length) {
+      const trip = itinerary();
+      if (trip && !trip.error) ensureRoads(trip);
+    }
+  }
+
+  function renderActiveTab() {
     if (state.tab === 'plan') renderPlan();
     if (state.tab === 'browse') renderBrowse();
     if (state.tab === 'export') renderExport();
     if (state.tab === 'notes') renderNotes();
-    if (map) { drawMarkers(); drawRoute(); }
   }
 
   function init() {
