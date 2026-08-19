@@ -36,7 +36,11 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   + '49454e44ae426082', 'hex');
 (async () => {
   const b = await chromium.launch({ executablePath: process.env.CHROME });
-  const p = await (await b.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 },
+                                   permissions: ['geolocation'],
+                                   geolocation: { latitude: 36.4000, longitude: -81.2000,
+                                                  accuracy: 25 } });
+  const p = await ctx.newPage();
   // The map instance lives inside app.js's IIFE. Rather than have the app export a global
   // purely so a test can reach it, catch the moment Leaflet assigns window.L.
   await p.addInitScript(() => {
@@ -218,6 +222,55 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     }, 800));
   });
 
+  // Where the rider is. The Parkway has no house numbers and phone signal disappears for
+  // miles, but the GPS chip does not need the network -- so this is the one live thing on
+  // the map that keeps working where everything else stops.
+  const gpsOff = await p.evaluate(() => ({
+    hasButton: !!document.querySelector('#gpsbtn'),
+    hidden: document.querySelector('#gpsbtn').hidden,
+    markers: document.querySelectorAll('.brp-me').length
+  }));
+  const gps = await p.evaluate(() => {
+    map0.closePopup();
+    document.querySelector('#gpsbtn').click();
+    return new Promise(res => setTimeout(() => {
+      const me = document.querySelector('.brp-me');
+      const c = map0.getCenter();
+      res({
+        marker: !!me,
+        magenta: !!me && me.innerHTML.includes('#e86ec4'),
+        // the motorcycle glyph, not a category pin
+        moto: !!me && me.innerHTML.includes('cx="5.1"'),
+        ring: !!document.querySelector('#map path[stroke="#e86ec4"]'),
+        followed: Math.abs(c.lat - 36.4) < 0.02 && Math.abs(c.lng + 81.2) < 0.02,
+        pressed: document.querySelector('#gpsbtn').getAttribute('aria-pressed'),
+        following: document.querySelector('#gpsbtn').classList.contains('following')
+      });
+    }, 1200));
+  });
+  // Panning by hand must stop the map chasing the rider, or looking ahead is impossible.
+  const panned = await p.evaluate(() => {
+    map0.fire('dragstart');
+    return new Promise(res => setTimeout(() => res({
+      following: document.querySelector('#gpsbtn').classList.contains('following'),
+      stillTracking: document.querySelector('#gpsbtn').classList.contains('on'),
+      marker: !!document.querySelector('.brp-me')
+    }), 300));
+  });
+  // Tap once to resume following, again to switch it off entirely.
+  const stopped = await p.evaluate(() => {
+    document.querySelector('#gpsbtn').click();          // resume following
+    return new Promise(res => setTimeout(() => {
+      const resumed = document.querySelector('#gpsbtn').classList.contains('following');
+      document.querySelector('#gpsbtn').click();        // off
+      setTimeout(() => res({
+        resumed, marker: !!document.querySelector('.brp-me'),
+        pressed: document.querySelector('#gpsbtn').getAttribute('aria-pressed'),
+        stored: JSON.parse(localStorage.getItem('brp-trip-v2') || '{}').gps
+      }), 400);
+    }, 400));
+  });
+
   const key = await p.evaluate(() => ({
     heads: [...document.querySelectorAll('.key-head')].map(n => n.textContent),
     rows: document.querySelectorAll('.key-row').length,
@@ -229,7 +282,8 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
       .filter(n => n.innerHTML.toLowerCase().includes(LINE.yourRoute.color.slice(1))).length
   }));
 
-  console.log(JSON.stringify({ wide, grey, named, fuelFills, stuck, sel, toggle, key, errors }));
+  console.log(JSON.stringify({ wide, grey, named, fuelFills, stuck, sel, toggle,
+                               gpsOff, gps, panned, stopped, key, errors }));
   await b.close();
 })();
 """
@@ -336,7 +390,9 @@ def main():
 
     print("\nlines and markers do not share a hue")
     check("the planned route is magenta", key["route"].lower() == "#e86ec4", key["route"])
-    check("and no marker anywhere is", key["magentaMarkers"] == 0,
+    # The live position marker is deliberately magenta -- "you" and "your route" are meant
+    # to match. What must never be magenta is a place or a pump, which is what this counts.
+    check("and no place or fuel pin is", key["magentaMarkers"] == 0,
           str(key["magentaMarkers"]))
 
     print("\nthe key doubles as the map's controls")
@@ -354,6 +410,32 @@ def main():
           tg["dimmed"] and tg["faded"], json.dumps(tg))
     check("and the choice is remembered", tg["stored"] and tg["stored"]["fuel"] is False,
           json.dumps(tg["stored"]))
+
+    print("\nthe rider's own position")
+    check("the map carries a locate control", js["gpsOff"]["hasButton"]
+          and not js["gpsOff"]["hidden"], json.dumps(js["gpsOff"]))
+    check("nothing is drawn until it is asked for", js["gpsOff"]["markers"] == 0,
+          json.dumps(js["gpsOff"]))
+    g = js["gps"]
+    check("a fix puts the rider on the map", g["marker"], json.dumps(g))
+    check("as a motorcycle, not a category pin", g["moto"], json.dumps(g))
+    check("in the route's magenta, so 'you' and 'your ride' match", g["magenta"],
+          json.dumps(g))
+    check("with an accuracy circle, so a loose fix does not look precise", g["ring"],
+          json.dumps(g))
+    check("and the map moves to them", g["followed"], json.dumps(g))
+    check("the control says it is on", g["pressed"] == "true" and g["following"],
+          json.dumps(g))
+    pan = js["panned"]
+    check("panning by hand stops the map chasing them", not pan["following"],
+          json.dumps(pan))
+    check("but tracking carries on", pan["stillTracking"] and pan["marker"],
+          json.dumps(pan))
+    st = js["stopped"]
+    check("tapping again resumes following", st["resumed"], json.dumps(st))
+    check("and once more switches it off", not st["marker"] and st["pressed"] == "false",
+          json.dumps(st))
+    check("which is remembered as off", st["stored"] is False, json.dumps(st))
 
     check("the page raised no errors", not js["errors"], str(js["errors"][:3]))
 

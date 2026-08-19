@@ -22,6 +22,7 @@
   /* Readable text ON amber and ON sky. Cream fails against both; Deep Blue clears AA. */
   --on-accent: #16344a;
   --off: #5b7280;              /* unreachable / switched-off markers */
+  --me: #e86ec4;               /* you, and your route: the same magenta */
   --radius: 10px; --radius-sm: 6px;
   --tap: 44px;                 /* minimum touch target */
   --sidebar-w: 400px;
@@ -51,6 +52,7 @@
   --danger: #a83c1c; --warn: #9a6a12; --ok: #2f7a4c;
   --on-accent: #f2efe6;
   --off: #7e909b;
+  --me: #c4318f;               /* the same magenta, darkened to hold up on cream */
   --map-bg: #e7e2d4;
   --shadow: 0 6px 24px rgba(14,26,34,.16);
 }
@@ -476,6 +478,56 @@ button, .chip, [role="tab"] { user-select: none; -webkit-user-select: none; }
   border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--shadow);
   font: 600 12.5px/1 var(--font);
 }
+
+/* ---- the locate control ---------------------------------------------------------
+ * Bottom-right, opposite the key and clear of Leaflet's zoom buttons and attribution.
+ * Always a full tap target -- this gets pressed in gloves, at the roadside.
+ *
+ * Three states, because "on" and "following you" are different things: once the rider
+ * pans by hand, tracking carries on but the map stops chasing them, and the control has
+ * to say which of those it is doing.
+ */
+#gpsbtn {
+  position: absolute; z-index: 600; right: 10px; bottom: 26px;
+  width: var(--tap); height: var(--tap); padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 50%;
+  box-shadow: var(--shadow); cursor: pointer;
+}
+/* Drawn in CSS rather than as an image so it inherits the theme and never 404s offline. */
+#gpsbtn::before {
+  content: ""; width: 17px; height: 17px; border-radius: 50%;
+  border: 2.5px solid var(--dim);
+  box-shadow: 0 0 0 3px transparent;
+}
+#gpsbtn::after {
+  content: ""; position: absolute; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--dim);
+}
+#gpsbtn.on::before { border-color: var(--me); }
+#gpsbtn.on::after { background: var(--me); }
+#gpsbtn.following::before { box-shadow: 0 0 0 3px color-mix(in srgb, var(--me) 30%, transparent); }
+#gpsbtn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+#gpsbtn[hidden] { display: none; }
+
+/* You, on the map. No divIcon box, and no pointer capture on the accuracy ring -- it can
+   be hundreds of metres wide and would otherwise swallow taps meant for real markers. */
+.brp-me { background: transparent; border: 0; }
+.brp-me svg { display: block; filter: drop-shadow(0 1px 3px rgba(14,26,34,.55)); }
+
+/* A message where the rider is looking: over the map, not in a sidebar that may be on
+   another tab. */
+.mapnote {
+  position: absolute; z-index: 620; left: 50%; transform: translateX(-50%);
+  bottom: 78px; max-width: min(320px, calc(100vw - 32px));
+  padding: 9px 13px; border-radius: var(--radius);
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--line); box-shadow: var(--shadow);
+  font-size: 12.5px; line-height: 1.4; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.mapnote.show { opacity: 1; }
+
 @media (max-width: 860px) {
   #maptoggle { display: inline-flex; }
   #app.map-full #side { display: none; }

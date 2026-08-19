@@ -29,6 +29,7 @@ const CATEGORY = {
   fuel:  { fill: "#35d07f", label: "Fuel",            note: "a pump" },
 };
 const UNVERIFIED = "#93a8b4";   // slate: listed, not visited
+export const ME = "#e86ec4";     // you: the same magenta as the planned route
 
 /* Ink that will actually read on the fill it sits on, rather than a colour chosen once and
    hoped for. Dark green needs cream strokes; the lighter fills need the night blue. */
@@ -69,6 +70,36 @@ export function pinSvg(kind, opts = {}) {
     + ring
     + `<g transform="translate(6,6)" fill="none" stroke="${ink(fill)}" stroke-width="1.9" `
     + `stroke-linecap="round" stroke-linejoin="round">${GLYPH[kind]}</g>${star}</svg>`;
+}
+
+/* Where the rider is, right now.
+ *
+ * Deliberately outside the pin vocabulary: it is not a place, so it must not look like
+ * one. Magenta, the colour the planned route already uses and the colour Garmin paints an
+ * active route, so "you" and "your ride" read as the same thing. Bigger than a pin, and it
+ * is the one marker with a white outer ring, which is what separates it from the map at
+ * any zoom without needing a category colour of its own.
+ *
+ * heading is degrees clockwise from north, or null when standing still -- phones only
+ * report it while moving, so the arrow is drawn only when it means something.
+ */
+export function meSvg(heading = null, size = 38) {
+  const arrow = heading == null ? `` :
+      `<g transform="rotate(${heading} 18 18)">`
+    + `<path d="M18 -3.4 L23 5.2 H13 Z" fill="${ME}" stroke="#ffffff" stroke-width="1.6"`
+    + ` stroke-linejoin="round"/></g>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 48 48" width="${size}" height="${size}">`
+    + `<circle cx="18" cy="18" r="16.4" fill="#ffffff" opacity=".9"/>`
+    + `<circle cx="18" cy="18" r="15" fill="${ME}" stroke="${PIN_NIGHT}" stroke-width="1.6"/>`
+    + `<g transform="translate(6,6)" fill="none" stroke="#ffffff" stroke-width="2.1" `
+    + `stroke-linecap="round" stroke-linejoin="round">${GLYPH.moto}</g>${arrow}</svg>`;
+}
+
+export function meIcon(heading = null, size = 38) {
+  return L.divIcon({
+    className: "brp-me", html: meSvg(heading, size),
+    iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+  });
 }
 
 /** Leaflet divIcon wrapper. Anchor is the ring centre, not the star. */
@@ -115,6 +146,9 @@ const TRUST_ROWS = [
     note: "works on any shape" },
 ];
 
+const ME_ROW = { me: true, label: "You, right now",
+                 note: "GPS — arrow shows which way you’re pointing" };
+
 const LINE_ROWS = [
   { line: LINE.parkwayOpen,   label: "Parkway open",           note: "rideable in 2026" },
   { line: LINE.parkwayClosed, label: "Parkway closed",         note: "Helene damage, roadworks" },
@@ -153,6 +187,7 @@ export function legendHtml(show = {}) {
   html += `<div class="key-head">HOW MUCH TO TRUST IT</div>`;
   TRUST_ROWS.forEach(r => html += row(pinSvg(r.pin[0], { size: 26, ...(r.pin[1] || {}) }),
                                       r.label, r.note));
+  html += row(meSvg(45, 26), ME_ROW.label, ME_ROW.note);
   html += `<div class="key-head">LINES</div>`;
   LINE_ROWS.forEach(r => html += row(swatchLine(r.line), r.label, r.note));
   return html;

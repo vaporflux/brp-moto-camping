@@ -40,6 +40,11 @@
     // Which shapes are drawn. Toggled from the map key, and remembered -- a rider looking
     // for somewhere to sleep does not want 283 fuel pins in the way, and vice versa.
     mapShow: { camp: true, moto: true, hotel: true, fuel: true },
+    // Live GPS. Remembered, but never auto-started unless the browser already holds the
+    // permission -- a location prompt on page load, before the rider has asked for
+    // anything, is how an app gets its location permission denied for good.
+    gps: false,
+    gpsFollow: true,
     search: '',
     showClosed: true,
     browseKind: 'all',         // Browse filters are independent of the trip being planned
@@ -72,7 +77,7 @@
         // them. pinMode is deliberately NOT saved: a pending map tap should not survive a
         // reload and hijack the next touch.
         legendOpen: state.legendOpen, filters: state.filters,
-        mapShow: state.mapShow,
+        mapShow: state.mapShow, gps: state.gps, gpsFollow: state.gpsFollow,
         browseKind: state.browseKind, browseWithinMi: state.browseWithinMi,
         browseShowers: state.browseShowers, browseToilets: state.browseToilets,
         stayKind: state.stayKind, stayShowers: state.stayShowers,
@@ -1776,6 +1781,7 @@
 
     layers.stops = L.layerGroup().addTo(map);
     layers.spider = L.layerGroup().addTo(map);
+    layers.me = L.layerGroup().addTo(map);
     layers.route = L.layerGroup().addTo(map);
     layers.preview = L.layerGroup().addTo(map);
 
@@ -1797,6 +1803,179 @@
     refreshLegend();
     drawMarkers();
     initMapToggle();
+    initGps();
+  }
+
+  /* A message on the map itself. The GPS control lives over the map, and the sidebar
+   * status line it would otherwise use can be on a different tab or scrolled off a phone
+   * screen entirely -- a refused permission has to be said where the rider is looking. */
+  let noteTimer = null;
+  function mapNote(text) {
+    const host = $('#map');
+    if (!host) return;
+    let n = host.querySelector('.mapnote');
+    if (!n) { n = el('div', 'mapnote'); host.append(n); }
+    n.textContent = text;
+    n.classList.add('show');
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => n.classList.remove('show'), 6000);
+  }
+
+  /* ---- where the rider is ---------------------------------------------------------
+   *
+   * A live position marker, which on this map is worth more than it would be on most:
+   * the Parkway has no house numbers, the mileposts are small concrete posts, and phone
+   * signal disappears for miles at a time. Geolocation reads the GPS chip and does not
+   * need the network, so this keeps working in exactly the places the rest of the
+   * internet does not.
+   *
+   * It is opt-in and it is stoppable, because watchPosition with high accuracy on is a
+   * real battery cost on a long day.
+   */
+  let watchId = null, meMarker = null, meRing = null, lastFix = null;
+
+  function gpsSupported() {
+    return !!(navigator.geolocation
+              && (location.protocol === 'https:' || location.hostname === 'localhost'
+                  || location.protocol === 'file:'));
+  }
+
+  function startGps() {
+    if (!gpsSupported() || watchId != null) return;
+    state.gps = true;
+    save();
+    watchId = navigator.geolocation.watchPosition(onFix, onGpsError, {
+      enableHighAccuracy: true,
+      maximumAge: 5000,      // a five-second-old fix is fine at road speed
+      timeout: 20000
+    });
+    renderGpsButton();
+  }
+
+  function stopGps() {
+    if (watchId != null) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    state.gps = false;
+    lastFix = null;
+    save();
+    if (layers.me) layers.me.clearLayers();
+    meMarker = meRing = null;
+    renderGpsButton();
+  }
+
+  function onFix(pos) {
+    const { latitude: lat, longitude: lon, accuracy, heading, speed } = pos.coords;
+    lastFix = { lat, lon, accuracy, heading, speed, at: pos.timestamp };
+    if (!map || !layers.me) return;
+
+    // Phones report a heading only while actually moving; a parked bike gets a compass
+    // reading of NaN or a stale value, and an arrow pointing the wrong way is worse than
+    // no arrow. Below walking pace, don't claim a direction.
+    const dir = (heading != null && !Number.isNaN(heading) && (speed || 0) > 1.5)
+      ? heading : null;
+
+    if (!meMarker) {
+      meMarker = L.marker([lat, lon], { icon: meIcon(dir), zIndexOffset: 1000,
+                                        interactive: true, keyboard: false })
+        .bindTooltip('You, right now', { direction: 'top' })
+        .addTo(layers.me);
+    } else {
+      meMarker.setLatLng([lat, lon]);
+      meMarker.setIcon(meIcon(dir));
+    }
+
+    // The accuracy circle is the honest part: a 300 m fix under tree cover should not look
+    // like a 5 m one, or the rider trusts a milepost reading that was never that precise.
+    const r = Math.max(accuracy || 0, 8);
+    if (!meRing) {
+      // Not interactive: a 300 m accuracy circle is a very large tap target, and it would
+      // otherwise swallow every press meant for a marker underneath it.
+      meRing = L.circle([lat, lon], { radius: r, color: ME, weight: 1, interactive: false,
+                                      opacity: .5, fillColor: ME, fillOpacity: .12 })
+        .addTo(layers.me);
+    } else {
+      meRing.setLatLng([lat, lon]);
+      meRing.setRadius(r);
+    }
+
+    if (state.gpsFollow) {
+      followingProgrammatically = true;
+      map.setView([lat, lon], Math.max(map.getZoom(), 13), { animate: false });
+      followingProgrammatically = false;
+    }
+    renderGpsButton();
+  }
+
+  function onGpsError(err) {
+    const why = err.code === 1 ? 'Location permission was refused.'
+              : err.code === 3 ? 'No GPS fix yet — try again with a clear view of the sky.'
+              : 'Location is unavailable right now.';
+    stopGps();
+    const btn = $('#gpsbtn');
+    if (btn) btn.title = why;
+    mapNote(why);
+  }
+
+  /* Panning by hand means the rider wants to look somewhere else, so stop dragging the map
+   * back to them. This is the same mistake the popup's keepInView makes, and it is much
+   * more annoying when it fires every second. */
+  let followingProgrammatically = false;
+  function watchForManualPan() {
+    map.on('dragstart', () => {
+      if (followingProgrammatically || !state.gpsFollow) return;
+      state.gpsFollow = false;
+      save();
+      renderGpsButton();
+    });
+  }
+
+  function renderGpsButton() {
+    const btn = $('#gpsbtn');
+    if (!btn) return;
+    const on = watchId != null;
+    btn.classList.toggle('on', on);
+    btn.classList.toggle('following', on && state.gpsFollow);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', on
+      ? (state.gpsFollow ? 'Following your location — tap to stop following'
+                         : 'Showing your location — tap to follow it again')
+      : 'Show where you are on the map');
+    if (!btn.title || on) {
+      btn.title = on
+        ? (lastFix
+            ? `You, ${Math.round(lastFix.accuracy)} m accuracy`
+               + (state.gpsFollow ? ' — following' : ' — tap to follow')
+            : 'Waiting for a GPS fix…')
+        : 'Show where you are';
+    }
+  }
+
+  function initGps() {
+    const btn = $('#gpsbtn');
+    if (!btn || btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    if (!gpsSupported()) { btn.hidden = true; return; }
+    btn.onclick = () => {
+      if (watchId == null) { state.gpsFollow = true; startGps(); return; }
+      // Already tracking: first tap re-centres and resumes following, second turns it off.
+      if (!state.gpsFollow) {
+        state.gpsFollow = true;
+        save();
+        if (lastFix) map.setView([lastFix.lat, lastFix.lon], Math.max(map.getZoom(), 13));
+        renderGpsButton();
+      } else {
+        stopGps();
+      }
+    };
+    watchForManualPan();
+    renderGpsButton();
+    // Resume only when the browser already holds the permission, so returning to the app
+    // mid-ride picks straight back up without ever prompting out of the blue.
+    if (state.gps && navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' })
+        .then(p => { if (p.state === 'granted') startGps(); })
+        .catch(() => {});
+    }
   }
 
   /* Give the phone its whole screen for whichever half is being used.
