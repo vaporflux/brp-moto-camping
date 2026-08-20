@@ -70,7 +70,16 @@
   };
 
   /* ---- persistence -------------------------------------------------------- */
+  /* Set once, on the way out, by "Start a new trip".
+   *
+   * Clearing storage and reloading is not enough on its own: renders are triggered from
+   * async work (the road lookups finish, their `finally` calls render, render calls save)
+   * and one of those can land between the delete and the reload, writing the trip straight
+   * back. The first attempt at this looked like the button did nothing at all. */
+  let wiped = false;
+
   function save() {
+    if (wiped) return;
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({
         name: state.name, stops: state.stops, arriveMinMi: state.arriveMinMi,
@@ -2005,6 +2014,65 @@
     a.style.color = 'var(--sky)'; a.style.fontSize = '11px'; a.style.wordBreak = 'break-all';
     src.append(a);
     pane.append(src);
+
+    /* This version, and how to get another one.
+     *
+     * An installed app has no address bar, so "reload the page" is not an instruction
+     * anybody can follow, and deleting the icon does not clear the storage -- which is why
+     * a reinstall looks like nothing happened. The app updates itself now; this is here so
+     * a rider can SEE which version they are on rather than take it on faith.
+     */
+    const about = el('div', 'section');
+    about.append(el('h2', null, 'This app'));
+    const ver = el('p', 'muted');
+    ver.append(document.createTextNode('Version '));
+    const code = el('strong', null, window.BRP_VERSION || 'unknown');
+    ver.append(code);
+    ver.append(document.createTextNode(
+      '. It checks for a new one every time you open it and updates on its own — '
+      + 'nothing to reload, nothing to reinstall. Tell me this number if something looks '
+      + 'wrong and I will know exactly what you are running.'));
+    about.append(ver);
+
+    const btns = el('div', 'btn-row');
+    const check = el('button', 'btn sm ghost', 'Check for an update now');
+    check.onclick = async () => {
+      check.disabled = true;
+      check.textContent = 'Checking\u2026';
+      try {
+        const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+        if (reg) await reg.update();
+      } catch (e) { /* offline, which is not an error worth shouting about */ }
+      // A reload here is safe: the trip is written to storage on every render. If a new
+      // version did arrive, this is the moment it takes over.
+      setTimeout(() => location.reload(), 800);
+    };
+    btns.append(check);
+
+    /* Your trip outlives the app icon.
+     *
+     * Deleting a home-screen app does not clear its storage, so a reinstall comes back with
+     * the same trip and looks like nothing was reset. That is the RIGHT behaviour -- a
+     * planned trip should survive a phone tidy-up -- but it needs a door, and there was
+     * none.
+     */
+    const wipe = el('button', 'btn sm ghost', 'Start a new trip');
+    wipe.onclick = () => {
+      const n = state.stops.length;
+      const what = state.start || n
+        ? `Clear the trip${n ? ` and its ${n} stop${n > 1 ? 's' : ''}` : ''}?`
+        : 'Clear the saved trip?';
+      if (!confirm(`${what} This cannot be undone.`)) return;
+      wiped = true;                  // stop any in-flight render writing it back
+      try { localStorage.removeItem(STORE_KEY); } catch (e) { /* private mode */ }
+      location.reload();
+    };
+    btns.append(wipe);
+    about.append(btns);
+    about.append(el('p', 'tiny',
+      'Starting a new trip clears your stops and settings from this phone. It does not '
+      + 'touch the campground, fuel or closure data, which ship with the app.'));
+    pane.append(about);
   }
 
   /* ---- map ----------------------------------------------------------------- */

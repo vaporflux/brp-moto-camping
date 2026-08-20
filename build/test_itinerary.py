@@ -187,8 +187,37 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     }, 600));
   });
 
+  // An installed app has no address bar, so "reload it" is not an instruction anybody can
+  // follow -- and deleting the home-screen icon does not clear storage, so a reinstall
+  // comes back with the same trip and looks like nothing happened. The Notes tab has to
+  // answer both: which version is this, and how do I start over.
+  const about = await p.evaluate(() => {
+    document.querySelector('.tabs button[data-tab="notes"]').click();
+    return new Promise(res => setTimeout(() => {
+      const pane = document.querySelector('#pane-notes');
+      const sec = [...pane.querySelectorAll('.section')]
+        .find(n => /This app/.test(n.textContent));
+      res({ version: window.BRP_VERSION || null,
+            shown: sec ? /Version\s+\S+/.test(sec.textContent) : false,
+            versionInText: sec ? sec.textContent.includes(window.BRP_VERSION) : false,
+            buttons: sec ? [...sec.querySelectorAll('button')].map(b => b.textContent) : [],
+            hadTrip: (JSON.parse(localStorage.getItem('brp-trip-v2') || '{}').stops || []).length });
+    }, 600));
+  });
+  // Accept the confirm, then check the trip is really gone -- not written back by a render
+  // that lands between the delete and the reload.
+  p.on('dialog', d => d.accept());
+  await p.evaluate(() => [...document.querySelectorAll('#pane-notes button')]
+    .find(b => /Start a new trip/.test(b.textContent)).click());
+  await p.waitForTimeout(2000);
+  const wiped = await p.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem('brp-trip-v2') || '{}');
+    return { stops: (st.stops || []).length, start: st.start,
+             plan: document.querySelector('#pane-plan').textContent.replace(/\s+/g, ' ').slice(0, 60) };
+  });
+
   console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff,
-                               orderBefore, orderAfter, emptyList, errors }));
+                               orderBefore, orderAfter, emptyList, about, wiped, errors }));
   await b.close();
 })();
 """
@@ -390,6 +419,21 @@ def main():
           and e["after"]["chars"] > 500, json.dumps(e["after"]))
     check("and says why the list is empty rather than showing nothing",
           "Food comes from Google" in e["after"]["empty"], e["after"]["empty"][:90])
+
+    print("\nthe app can say what it is and start over")
+    ab = js["about"]
+    check("the page knows its own version", bool(ab["version"]), str(ab["version"]))
+    check("and shows it where a rider can read it off",
+          ab["shown"] and ab["versionInText"], json.dumps(ab))
+    check("with a way to force an update check and a way to start over",
+          any("update" in b.lower() for b in ab["buttons"])
+          and any("new trip" in b.lower() for b in ab["buttons"]), str(ab["buttons"]))
+    check("there was a trip to clear", ab["hadTrip"] > 0, str(ab["hadTrip"]))
+    w = js["wiped"]
+    check("starting a new trip really clears it",
+          w["stops"] == 0 and not w["start"], json.dumps(w))
+    check("and the plan tab goes back to asking where you are starting from",
+          "Starting from" in w["plan"], w["plan"])
 
     check("the page raised no errors", not js["errors"], str(js["errors"][:3]))
 

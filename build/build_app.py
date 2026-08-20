@@ -93,6 +93,15 @@ def main():
         html = html.replace(token, js[name])
     html = html.replace("__DATA__", data)
 
+    # The app's version is the service worker's version, read from sw.js rather than typed
+    # here. Two places to bump is one place to forget, and the number a rider reads off the
+    # Notes tab has to be the number that decides which code their phone is running.
+    sw = read(os.path.join(ROOT, "sw.js"))
+    m = re.search(r"const VERSION = '([^']+)'", sw)
+    assert m, "sw.js has no VERSION to stamp into the page"
+    html = html.replace("__APP_VERSION__", m.group(1))
+
+
     # The header lockup is the same artwork the icons are cut from. Inlined rather than
     # linked so the page stays one self-contained file that works from a filesystem.
     # The header mark follows the theme.
@@ -118,7 +127,7 @@ def main():
     print(f"index.html (deployed)  {size/1024:.0f} KB")
     for token in ("__LEAFLET_CSS__", "__APP_CSS__", "__LEAFLET_JS__", "__DATA__",
                   "__CORE_JS__", "__ROUTE_JS__", "__GPX_JS__", "__MAPPINS_JS__",
-                  "__APP_JS__", "__MARK_SVG__"):
+                  "__APP_JS__", "__MARK_SVG__", "__APP_VERSION__"):
         assert token not in html, f"unsubstituted token {token}"
     assert html.count("<html") == 1
     print("  all tokens substituted")

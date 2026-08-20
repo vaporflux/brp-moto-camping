@@ -62,6 +62,7 @@
 <input type="file" id="importer" accept="application/json,.json" hidden>
 <script>__LEAFLET_JS__</script>
 <script>window.BRP_DATA=__DATA__;</script>
+<script>window.BRP_VERSION='__APP_VERSION__';</script>
 <script>__CORE_JS__</script>
 <script>__ROUTE_JS__</script>
 <script>__GPX_JS__</script>
@@ -71,8 +72,34 @@
 /* Registered from the page rather than bundled, so opening index.html straight off the
    filesystem -- which is how the tests drive it -- does not throw. */
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  /* Update without the rider having to know what a service worker is.
+   *
+   * skipWaiting() and clients.claim() already hand control to a new worker as soon as it
+   * installs, but the PAGE carrying that moment is still the old HTML -- so the app went on
+   * showing old code until something happened to reload it, and on an installed PWA that
+   * can be days. "Refresh the app" is not an instruction anybody can act on: there is no
+   * address bar, and deleting the icon does not clear the storage.
+   *
+   * So: check for a new version on load and every time the app comes back to the front,
+   * and reload once when a new worker actually takes over. Reloading is safe because the
+   * trip is written to localStorage on every render -- it survives, which is also why
+   * deleting the app never appeared to change anything.
+   */
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      const check = () => { if (document.visibilityState === 'visible') reg.update(); };
+      document.addEventListener('visibilitychange', check);
+      setInterval(check, 60 * 60 * 1000);
+    }).catch(() => {});
+
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      // Guarded: controllerchange also fires on the very first install, when there is
+      // nothing stale to replace and a reload would be a pointless flash.
+      if (reloading || !navigator.serviceWorker.controller) return;
+      reloading = true;
+      location.reload();
+    });
   });
 }
 </script>
