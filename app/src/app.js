@@ -666,6 +666,27 @@
 
   /* One row. Tapping shows the place ON THE MAP -- the detail belongs where the rider is
    * looking at the location, and committing stays a second, deliberate press in the card. */
+  /* The verb that belongs to a place.
+   *
+   * "Stay here" on a diner is the app admitting it has not understood what the rider just
+   * picked, so the wording follows the category everywhere it appears -- the map card and
+   * the list row read the same, because they do the same thing.
+   */
+  const addVerb = c => c.kind === 'fuel' ? 'Gas up here'
+                     : c.kind === 'food' ? 'Eat here'
+                     : 'Stay here';
+
+  /* Put a place in the trip, from wherever it was chosen. */
+  function commitStop(c) {
+    const stop = c.kind === 'fuel' ? BRP.asStop(c._fuel) : BRP.placeStop(c);
+    if (map) map.closePopup();
+    if (layers.preview) layers.preview.clearLayers();
+    state.previewId = null;
+    state.destQuery = '';
+    state.addingStop = false;
+    addStop(stop);
+  }
+
   function finderRow(c) {
     const b = el('button', 'row');
     b.dataset.mp = c.mp ?? 0;
@@ -711,9 +732,35 @@
     }
     if (badges.childElementCount) body.append(badges);
     b.append(body);
-    if (state.previewId === c.id) b.classList.add('sel');
+
+    /* Tapping a row used to do nothing but open a card on the map -- which on a phone
+     * showing the full list is a card the rider cannot see. The only way to add anything
+     * was to switch to the map and find the pin again. So the chosen row carries the
+     * action itself.
+     *
+     * A wrapper, because the row is a <button> and a button inside a button is invalid
+     * markup that browsers quietly unpick.
+     */
+    const wrap = el('div', 'rowwrap');
+    wrap.append(b);
     b.onclick = () => { state.previewId = c.id; render(); previewOnMap(c); };
-    return b;
+
+    if (state.previewId === c.id) {
+      b.classList.add('sel');
+      const act = el('div', 'rowact');
+      const go = el('button', 'btn sm primary', addVerb(c));
+      go.onclick = e => { e.stopPropagation(); commitStop(c); };
+      const shut = el('button', 'btn sm ghost', 'Not this one');
+      shut.onclick = e => {
+        e.stopPropagation();
+        state.previewId = null;
+        if (layers.preview) layers.preview.clearLayers();
+        render();
+      };
+      act.append(go, shut);
+      wrap.append(act);
+    }
+    return wrap;
   }
 
   /* ---- input 2: where you are staying -------------------------------------------
@@ -906,15 +953,8 @@
     const isFood = c.kind === 'food';
     // "Stay here" on a diner is the app telling the rider it has not understood what they
     // just picked. Every category gets the verb that belongs to it.
-    const add = el('button', 'btn primary',
-                   isFuel ? 'Add as a fuel stop' : isFood ? 'Eat here' : 'Stay here');
-    add.onclick = () => {
-      const stop = isFuel ? BRP.asStop(c._fuel) : BRP.placeStop(c);
-      dismiss();
-      state.destQuery = '';
-      state.addingStop = false;
-      addStop(stop);
-    };
+    const add = el('button', 'btn primary', addVerb(c));
+    add.onclick = () => commitStop(c);
     const shut = el('button', 'btn ghost',
                     (isFuel || isFood) ? 'Close' : 'Not this one');
     shut.onclick = () => { dismiss(); render(); };
@@ -2314,7 +2354,11 @@
     if (!btn || btn.dataset.wired) return;
     btn.dataset.wired = '1';
     btn.onclick = () => {
-      state.mapView = state.mapView === 'map' ? 'list' : 'map';
+      // Split -> full map -> full list -> split. It used to flip between the two full
+      // views only, so the first tap locked the rider out of the half-and-half default
+      // for the rest of the session with no way back to it.
+      state.mapView = state.mapView === 'split' ? 'map'
+                    : state.mapView === 'map' ? 'list' : 'split';
       applyMapView();
     };
     applyMapView();
@@ -2325,7 +2369,9 @@
     if (!app || !btn) return;
     app.classList.toggle('map-full', state.mapView === 'map');
     app.classList.toggle('list-full', state.mapView === 'list');
-    const next = state.mapView === 'map' ? 'Show the list' : 'Show the full map';
+    // The label names what the next tap GIVES you, so the cycle needs no explaining.
+    const next = state.mapView === 'split' ? 'Full map'
+               : state.mapView === 'map' ? 'Full list' : 'Split view';
     btn.textContent = next;
     btn.setAttribute('aria-label', next);
     // Leaflet caches the container size, so a pane that changed height behind its back

@@ -191,6 +191,24 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
 .row .meta { font-size: 11px; color: var(--dim); margin-top: 3px; line-height: 1.45; }
 .row .badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
 
+/* The chosen row's own action bar.
+   A sibling of the row rather than a child, because the row is a <button> and a button
+   inside a button is markup browsers quietly unpick. */
+.rowwrap { display: block; }
+.row.sel { background: var(--panel-2); }
+.rowact {
+  display: flex; gap: 8px; padding: 0 14px 12px 58px;
+  background: var(--panel-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.rowact .btn { flex: 0 0 auto; }
+@media (max-width: 860px) {
+  /* Left-align with the row's text on a narrow screen rather than under the milepost,
+     and give both buttons a real touch target. */
+  .rowact { padding: 0 12px 12px 12px; }
+  .rowact .btn { min-height: var(--tap); flex: 1 1 auto; }
+}
+
 /* ---- trip / days ---------------------------------------------------------- */
 .day {
   margin: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius);

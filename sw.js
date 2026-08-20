@@ -25,7 +25,7 @@
  * what happened when this was first written: every deploy errored for half an hour and the
  * site silently stayed on the previous version while I told the rider to reload harder.
  */
-const VERSION = 'brp-v16-fix-deploy';
+const VERSION = 'brp-v17-split-and-list-add';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 const TILE_LIMIT = 1200;              // ~15-25 MB, enough for a planned corridor

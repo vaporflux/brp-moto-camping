@@ -330,6 +330,66 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   });
   await p.setViewportSize({ width: 1280, height: 900 });
 
+  /* Half and half is the default and has to be reachable again.
+   *
+   * The toggle used to flip between the two FULL views only, so the first tap locked the
+   * rider out of the split view for the rest of the session. And in the full list, tapping
+   * a place only opened a card on the map -- a card that, by definition, is not on screen.
+   */
+  await p.setViewportSize({ width: 390, height: 844 });
+  // An earlier check left the view somewhere; wind it round to the split view first, so
+  // the cycle is recorded from a known starting point rather than wherever it landed.
+  await p.evaluate(() => {
+    const btn = document.querySelector('#maptoggle');
+    for (let i = 0; i < 3 && btn.textContent !== 'Full map'; i++) btn.click();
+  });
+  await p.waitForTimeout(300);
+  const viewCycle = [];
+  for (let i = 0; i < 4; i++) {
+    viewCycle.push(await p.evaluate(() => ({
+      view: document.querySelector('#app').className.match(/map-full|list-full/)
+              ? document.querySelector('#app').className.match(/map-full|list-full/)[0]
+              : 'split',
+      label: document.querySelector('#maptoggle').textContent,
+    })));
+    await p.evaluate(() => document.querySelector('#maptoggle').click());
+    await p.waitForTimeout(280);
+  }
+
+  const listAdd = await p.evaluate(() => {
+    const app = document.querySelector('#app');
+    let guard = 0;
+    while (!app.classList.contains('list-full') && guard++ < 5) {
+      document.querySelector('#maptoggle').click();
+    }
+    document.querySelector('.tabs button[data-tab="browse"]').click();
+    return new Promise(res => setTimeout(() => {
+      const row = document.querySelector('#pane-browse .scroller .row');
+      if (!row) return res({ noRow: true });
+      const name = row.querySelector('.name').textContent;
+      row.click();
+      setTimeout(() => {
+        const act = document.querySelector('#pane-browse .rowact');
+        const labels = act ? [...act.querySelectorAll('button')].map(x => x.textContent) : [];
+        // The button must be a real sibling of the row, not nested inside it: a <button>
+        // inside a <button> is markup browsers quietly unpick.
+        const nested = !!(act && act.closest('.row'));
+        if (act) act.querySelector('button').click();
+        setTimeout(() => res({
+          name, labels, nested,
+          view: app.className.match(/list-full/) ? 'list-full' : 'other',
+          stops: (JSON.parse(localStorage.getItem('brp-trip-v2') || '{}').stops || [])
+                   .map(x => x.name),
+        }), 700);
+      }, 500);
+    }, 600));
+  });
+  await p.evaluate(() => {
+    const app = document.querySelector('#app');
+    app.classList.remove('map-full', 'list-full');
+  });
+  await p.setViewportSize({ width: 1280, height: 900 });
+
   const key = await p.evaluate(() => ({
     heads: [...document.querySelectorAll('.key-head')].map(n => n.textContent),
     rows: document.querySelectorAll('.key-row').length,
@@ -342,7 +402,8 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   }));
 
   console.log(JSON.stringify({ wide, grey, named, fuelFills, stuck, sel, toggle,
-                               gpsOff, gps, panned, stopped, safeArea, swap, key, errors }));
+                               gpsOff, gps, panned, stopped, safeArea, swap,
+                               viewCycle, listAdd, key, errors }));
   await b.close();
 })();
 """
@@ -509,6 +570,23 @@ def main():
           sa["appBottom"] <= sa["viewport"] + 1 and sa["scroll"] <= 1,
           json.dumps({k: sa[k] for k in ("appBottom", "viewport", "scroll")}))
 
+    print("\nhalf and half is reachable, and the list can add a stop by itself")
+    vc = js["viewCycle"]
+    check("it cycles split, full map, full list, and back to split",
+          [v["view"] for v in vc] == ["split", "map-full", "list-full", "split"],
+          str([v["view"] for v in vc]))
+    check("and each label names what the next tap gives you",
+          [v["label"] for v in vc[:3]] == ["Full map", "Full list", "Split view"],
+          str([v["label"] for v in vc]))
+    la = js["listAdd"]
+    check("a row in the full list offers the action itself",
+          bool(la.get("labels")), json.dumps(la))
+    check("the action is a sibling of the row, not a button inside a button",
+          not la.get("nested"), json.dumps(la))
+    check("tapping it adds the place without ever showing the map",
+          la.get("stops") == [la.get("name")] and la.get("view") == "list-full",
+          json.dumps(la))
+
     print("\nthe map/list swap is not a one-way door")
     sw = js["swap"]
     check("showing the full map works", "map-full" in sw["mapFull"], sw["mapFull"])
@@ -516,7 +594,10 @@ def main():
     check("the way back to the map still has a size", sw["visible"], json.dumps(sw))
     check("and is actually on top, not clipped by the collapsed map pane", sw["onTop"],
           json.dumps(sw))
-    check("and it offers the map", "map" in sw["label"].lower(), sw["label"])
+    # Under the three-state cycle the way out of the full list is the split view, which is
+    # a view WITH the map in it. What must never happen is the list offering another list.
+    check("and it offers a view that contains the map",
+          sw["label"] in ("Full map", "Split view"), sw["label"])
 
     check("the page raised no errors", not js["errors"], str(js["errors"][:3]))
 
