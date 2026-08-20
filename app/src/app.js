@@ -116,6 +116,13 @@
         Directions.seed(saved.roads);
         delete saved.roads;
         Object.assign(state, saved);
+        // Stops saved before the overnight flag was reachable all carry false, and that
+        // false was never a decision -- there was no control to make it with. Derive it
+        // from what the place is, once, and leave anything the rider has since chosen.
+        state.stops.forEach(st => {
+          if (st.nightChosen) return;
+          st.dayBreakAfter = sleepsHere(st);
+        });
       }
     } catch (e) { /* ignore corrupt state rather than trap the user on a broken page */ }
   }
@@ -402,9 +409,18 @@
    * would silently undo a manual reorder every time another stop is added, and manual
    * order is meaningful — an out-and-back up the Mt Mitchell spur is deliberately not in
    * milepost order. */
+  /* Does the rider sleep here?
+   *
+   * A campsite or a hotel is somewhere you stay the night, so the ride on from it starts
+   * the next morning. A meal or a pump is not. This used to be hardcoded false for every
+   * stop with no way to change it, which meant the overnight never happened: a two-day trip
+   * was timed as one very long day, and buildDays() never split the GPX either.
+   */
+  const sleepsHere = stop => stop.kind !== 'food' && stop.kind !== 'fuel';
+
   function addStop(stop) {
     if (state.stops.some(s => s.id === stop.id)) return;
-    const entry = { ...stop, dayBreakAfter: false };
+    const entry = { ...stop, dayBreakAfter: sleepsHere(stop), nightChosen: false };
     let at = state.stops.findIndex(s => s.mp > stop.mp);
     if (at === -1) at = state.stops.length;
     state.stops.splice(at, 0, entry);
@@ -787,15 +803,34 @@
     let nights = 0;
     state.stops.forEach((st, i) => {
       const meal = st.kind === 'food';
-      if (!meal) nights++;
+      if (st.dayBreakAfter) nights++;
       const row = el('div', 'picked');
       const body = el('div', 's-body');
       const suffix = meal ? '  \u00b7  meal stop'
-                   : state.stops.filter(x => x.kind !== 'food').length > 1
+                   : st.dayBreakAfter && state.stops.filter(x => x.dayBreakAfter).length > 1
                      ? `  \u00b7  night ${nights}` : '';
       body.append(el('div', 's-name', `${st.name}${suffix}`));
       body.append(el('div', 's-meta',
         `MP ${st.mp.toFixed(1)}${st.label ? ' \u00b7 ' + st.label : ''}`));
+
+      // Whether the rider sleeps here decides where the clock rolls to the next morning and
+      // where the GPX splits into a new day's file. It has to be sayable, not inferred.
+      if (!meal) {
+        const night = el('button',
+          `chip sm${st.dayBreakAfter ? ' on' : ''}`,
+          st.dayBreakAfter ? 'Staying the night' : 'Riding on the same day');
+        night.title = 'Whether the ride on from here starts the next morning';
+        night.setAttribute('aria-pressed', String(!!st.dayBreakAfter));
+        night.onclick = () => {
+          st.dayBreakAfter = !st.dayBreakAfter;
+          st.nightChosen = true;      // never overwrite this again
+          render();
+        };
+        const wrap = el('div', 'chip-row');
+        wrap.style.marginTop = '6px';
+        wrap.append(night);
+        body.append(wrap);
+      }
       row.append(body);
 
       // Arrows rather than drag-and-drop: this gets used in gloves, on a phone, at the

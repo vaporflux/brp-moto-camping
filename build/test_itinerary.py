@@ -76,7 +76,9 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   await p.evaluate(() => {
     const st = JSON.parse(localStorage.getItem('brp-trip-v2'));
     st.parkwayMph = 40; st.startTime = '09:00';
-    st.stops = st.stops.map(s => ({ ...s, dayBreakAfter: false }));
+    // nightChosen, because a bare false is now read as "never asked" and repaired to what
+    // the place is. Riding straight through a campsite is a decision, and has to say so.
+    st.stops = st.stops.map(s => ({ ...s, dayBreakAfter: false, nightChosen: true }));
     localStorage.setItem('brp-trip-v2', JSON.stringify(st));
   });
   await p.reload({ waitUntil: 'domcontentloaded' });
@@ -268,9 +270,40 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   const sameHour = await reseed({ startTime: '07:00', campTime: '07:00' });
   const lateCamp = await reseed({ startTime: '07:00', campTime: '10:30' });
 
+  /* Arriving at a campsite means the ride on starts tomorrow.
+   *
+   * dayBreakAfter was hardcoded false on every stop the app could add, and no control
+   * existed to change it -- so the overnight never fired for a real trip, and buildDays()
+   * never split the GPX either. The flag is derived from what the place is now, and the
+   * rider can say otherwise.
+   */
+  await p2.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem('brp-trip-v2'));
+    st.startTime = '08:00'; st.campTime = '10:00';
+    st.stops = [{ id: 'camp', name: 'Peaks Of Otter Campground', mp: 85.1, lat: 37.44,
+                  lon: -79.60, kind: 'campground', label: 'Campground', offParkwayMi: 1.0,
+                  dayBreakAfter: false }];   // saved the old way, with no way to change it
+    localStorage.setItem('brp-trip-v2', JSON.stringify(st));
+  });
+  await p2.reload({ waitUntil: 'domcontentloaded' });
+  await p2.waitForTimeout(2600);
+  const readNight = () => p2.evaluate(() => ({
+    chip: [...document.querySelectorAll('#pane-plan .picked .chip')].map(c => c.textContent),
+    finish: ([...document.querySelectorAll('#pane-plan .stop')]
+      .find(n => n.textContent.startsWith('FINISH')) || { textContent: '' })
+      .textContent.replace(/\s+/g, ' ').trim(),
+    saved: (JSON.parse(localStorage.getItem('brp-trip-v2') || '{}').stops || [])
+      .map(x => [x.dayBreakAfter, !!x.nightChosen]),
+  }));
+  const nightRepaired = await readNight();
+  await p2.evaluate(() => [...document.querySelectorAll('#pane-plan .picked .chip')]
+    .find(c => /night|same day/i.test(c.textContent)).click());
+  await p2.waitForTimeout(1800);
+  const nightOff = await readNight();
+
   console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff,
                                orderBefore, orderAfter, emptyList, about, wiped, routed,
-                               sameHour, lateCamp, errors }));
+                               sameHour, lateCamp, nightRepaired, nightOff, errors }));
   await b.close();
 })();
 """
@@ -514,6 +547,21 @@ def main():
         check("breaking camp later moves the ride home by exactly that much",
               minutes(tb) - minutes(ta) == 210,
               f"{minutes(ta)} -> {minutes(tb)} ({minutes(tb) - minutes(ta)} min)")
+
+    print("\narriving at a campsite means tomorrow")
+    nr, no = js["nightRepaired"], js["nightOff"]
+    check("a campsite saved before the flag existed is treated as a night",
+          nr["saved"] == [[True, False]], json.dumps(nr["saved"]))
+    check("and the row says so", nr["chip"] == ["Staying the night"], str(nr["chip"]))
+    check("so the ride home lands on day two", "(day 2)" in nr["finish"],
+          nr["finish"][-60:])
+    check("the rider can say they are riding on instead",
+          no["chip"] == ["Riding on the same day"], str(no["chip"]))
+    check("which keeps the ride home on the same day", "(day" not in no["finish"],
+          no["finish"][-60:])
+    # Once said, never overwritten -- that is what nightChosen is for.
+    check("and the choice is recorded so nothing derives over it",
+          no["saved"] == [[False, True]], json.dumps(no["saved"]))
 
     print("\nthe app can say what it is and start over")
     ab = js["about"]
