@@ -393,6 +393,12 @@
       const [plat, plon] = BRP.coordAtMp(st.mp);
       roadLegs.push({ id: `off-${st.id}`, from: [plat, plon], to: [st.lat, st.lon],
                       label: `Off the Parkway to ${st.name}`, stop: st });
+      // And back again. This leg did not exist: the trip rode off to a campsite and then
+      // simply resumed from its milepost, so leaving camp had no directions, no minutes and
+      // no miles -- on a stop six miles down a mountain road, twice over.
+      roadLegs.push({ id: `back-${st.id}`, from: [st.lat, st.lon], to: [plat, plon],
+                      label: `Back to the Parkway from ${st.name}`, stop: st,
+                      returning: true });
     });
     if (exitPoint) {
       roadLegs.push({ id: 'out', from: [exitPoint.lat, exitPoint.lon], to: endLL,
@@ -1575,7 +1581,13 @@
       const t = tankAt[i + 1];
       const last = i === state.stops.length - 1;
       const meal = st.kind === 'food';
+      // The ride back to the Parkway belongs to the leg AFTER this stop -- it happens
+      // the next morning, after the overnight, not on the evening you arrive.
+      const prev = state.stops[i - 1];
       const ev = { pos: wpos ? wpos[i + 1] : i + 1, order: 1,
+                   preLeg: prev
+                     ? (trip.roadLegs || []).find(l => l.id === `back-${prev.id}`) : null,
+                   preMi: prev ? (prev.offParkwayMi || 0) : 0,
                    // offParkwayMi, not off_parkway_mi. A stop comes from BRP.placeStop,
                    // which writes the camelCase name -- so this read undefined and the ride
                    // out to a campsite six miles off the Parkway cost no time at all.
@@ -1635,7 +1647,11 @@
 
     if (trip.exitPoint) {
       const t = tankAt[tankAt.length - 1];
-      const ev = { pos: wpos ? wpos[wpos.length - 1] : 1e9, order: 3 };
+      const last = state.stops[state.stops.length - 1];
+      const ev = { pos: wpos ? wpos[wpos.length - 1] : 1e9, order: 3,
+                   preLeg: last
+                     ? (trip.roadLegs || []).find(l => l.id === `back-${last.id}`) : null,
+                   preMi: last ? (last.offParkwayMi || 0) : 0 };
       ev.row = () => stepRow(
         `MP ${trip.exitPoint.mp}`, `Leave the Parkway — ${trip.exitPoint.name}`,
         [`${trip.exitPoint.parkwayMi} mi of Parkway from camp`,
@@ -1663,7 +1679,10 @@
       if (ev.order === -1) { ev.legHours = 0; ev.atMin = clock; return; }
       const parkwayMin = hoursFor(Math.max(0, ev.pos - lastPos)) * 60;
       const offMin = ev.leg ? legMinutes(ev.leg, ev.offMi) : (ev.offMi || 0) / OFF_PARKWAY_MPH * 60;
-      const legHours = (parkwayMin + offMin) / 60;
+      // Plus getting back to the Parkway from wherever the last stop was.
+      const preMin = ev.preLeg ? legMinutes(ev.preLeg, ev.preMi)
+                   : (ev.preMi || 0) / OFF_PARKWAY_MPH * 60;
+      const legHours = (parkwayMin + offMin + preMin) / 60;
       ev.legHours = legHours;
       ev.routed = !!(ev.leg && (Directions.peek(ev.leg.from, ev.leg.to) || {}).ok);
       clock += legHours * 60;
@@ -1735,10 +1754,12 @@
     const legFor = id => legs.find(l => l.id === id);
     seq.push({ kind: 'road', leg: legFor('in') });
     let atMp = trip.chosen.mp;
-    state.stops.forEach(st => {
-      seq.push({ kind: 'parkway', from: atMp, to: st.mp, arriveAt: st });
+    state.stops.forEach((st, i) => {
+      seq.push({ kind: 'parkway', from: atMp, to: st.mp, arriveAt: st, stopIndex: i });
       const off = legFor(`off-${st.id}`);
       if (off) seq.push({ kind: 'road', leg: off });
+      const back = legFor(`back-${st.id}`);
+      if (back) seq.push({ kind: 'road', leg: back });
       atMp = st.mp;
     });
     if (trip.exitPoint) {
@@ -1802,8 +1823,26 @@
     // Fuel and closures the rider passes, in travel order -- the two things that matter on
     // a road with no turns.
     const lo = Math.min(item.from, item.to), hi = Math.max(item.from, item.to);
-    const passing = (trip.fuel.stops || []).filter(f => f.mp >= lo && f.mp <= hi);
-    passing.sort((a, b) => heading === 'south' ? a.mp - b.mp : b.mp - a.mp);
+
+    /* Fuel stops belong to a LEG, not to a milepost.
+     *
+     * This filtered by milepost alone, and a round trip passes every milepost twice -- so
+     * a pump planned for the ride home was listed in the outbound directions, and again on
+     * the way back. On a Waynesboro round trip the outbound leg advertised US 60 at MP
+     * 45.6, which the rider does not stop at until the following day.
+     *
+     * planJourney lays the whole ride out as one distance line and gives every stop a
+     * position on it, and waypointPos says where each leg begins and ends. Filtering on
+     * that puts each stop on the one leg it actually happens on.
+     */
+    const wp = trip.fuel.waypointPos || [];
+    const i = item.stopIndex;
+    const posFrom = item.isExit ? wp[wp.length - 2] : wp[i];
+    const posTo = item.isExit ? wp[wp.length - 1] : wp[i + 1];
+    const passing = (trip.fuel.stops || []).filter(f => (posFrom == null || posTo == null)
+      ? (f.mp >= lo && f.mp <= hi)                     // no journey line: fall back
+      : (f.pos > posFrom - 1e-6 && f.pos < posTo + 1e-6));
+    passing.sort((a, b) => a.pos - b.pos);
     passing.forEach(f => {
       const li = el('li');
       li.append(document.createTextNode(

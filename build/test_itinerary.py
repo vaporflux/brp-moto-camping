@@ -51,7 +51,22 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
       finish: 'home', tankMi: 200, arriveMinMi: 10, maxFuelDetourMi: 8,
     }, patch);
     localStorage.setItem('brp-trip-v2', JSON.stringify(st));
-  }, patch).then(() => p.reload({ waitUntil: 'domcontentloaded' }));
+  }, patch).then(() => p.reload({ waitUntil: 'domcontentloaded' }))
+     .then(() => p.waitForTimeout(1200)).then(() => settle(p));
+
+  /* Road lookups resolve asynchronously and re-render when they land, so any fixed sleep
+   * is a race -- one that showed up as an intermittent failure on the camp-departure
+   * check. Wait for the app to stop saying it is working instead. */
+  const settle = async (page, ms = 6000) => {
+    const until = Date.now() + ms;
+    for (;;) {
+      const busy = await page.evaluate(() => !!(JSON.parse(
+        localStorage.getItem('brp-trip-v2') || '{}') && document.querySelector('.alert.info')
+        && /Working out the roads/.test(document.querySelector('.alert.info').textContent)));
+      if (!busy || Date.now() > until) return;
+      await page.waitForTimeout(200);
+    }
+  };
 
   const read = () => p.evaluate(() => {
     const rows = [...document.querySelectorAll('#pane-plan .stop')]
@@ -230,9 +245,14 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     const u = r.request().url();
     if (u.includes('/api/route')) {
       // Nine miles of switchbacks that genuinely take 25 minutes, not 11.
+      // The real endpoint returns legs[].steps[].text -- an empty legs array would make the
+      // turn-list assertion below pass or fail on the stub's shape rather than the app's.
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
         ok: true, distance_mi: 9.0, duration_min: 25,
-        polyline: [[37.93, -79.05], [37.89, -79.15]], legs: [], steps: [] }) });
+        polyline: [[37.93, -79.05], [37.89, -79.15]],
+        legs: [{ distance_mi: 9.0, duration_min: 25, steps: [
+          { text: 'Follow the campground road to VA 43', distance_mi: 0.6 },
+          { text: 'Turn left onto VA 43 toward the Parkway', distance_mi: 8.4 }] }] }) });
     }
     return u.startsWith('file:') ? r.continue()
       : r.fulfill({ status: 200, contentType: 'image/png', body: TILE });
@@ -249,7 +269,8 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     localStorage.setItem('brp-trip-v2', JSON.stringify(t));
   }, seed());
   await p2.goto('file://' + process.env.PAGE, { waitUntil: 'domcontentloaded' });
-  await p2.waitForTimeout(3500);
+  await p2.waitForTimeout(1500);
+  await settle(p2);
   const routed = await p2.evaluate(() => ({
     rows: [...document.querySelectorAll('#pane-plan .stop')]
       .map(n => n.textContent.replace(/\s+/g, ' ').trim()),
@@ -263,7 +284,8 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
                       Object.assign(seed(), { stops: [Object.assign({}, seed().stops[0],
                                                       { dayBreakAfter: true })] }, patch));
     await p2.reload({ waitUntil: 'domcontentloaded' });
-    await p2.waitForTimeout(3000);
+    await p2.waitForTimeout(1500);
+    await settle(p2);
     return p2.evaluate(() => [...document.querySelectorAll('#pane-plan .stop')]
       .map(n => n.textContent.replace(/\s+/g, ' ').trim()));
   };
@@ -286,7 +308,8 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     localStorage.setItem('brp-trip-v2', JSON.stringify(st));
   });
   await p2.reload({ waitUntil: 'domcontentloaded' });
-  await p2.waitForTimeout(2600);
+  await p2.waitForTimeout(1500);
+  await settle(p2);
   const readNight = () => p2.evaluate(() => ({
     chip: [...document.querySelectorAll('#pane-plan .picked .chip')].map(c => c.textContent),
     finish: ([...document.querySelectorAll('#pane-plan .stop')]
@@ -301,9 +324,34 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   await p2.waitForTimeout(1800);
   const nightOff = await readNight();
 
+  /* Directions describe the ride that is actually being ridden.
+   *
+   * A tank small enough to force a stop in each direction, so the two legs of a round trip
+   * have different fuel on them -- which is exactly what the milepost filter could not
+   * tell apart.
+   */
+  await p2.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem('brp-trip-v2'));
+    st.tankMi = 90; st.startTime = '08:00'; st.campTime = '10:00';
+    st.stops = [{ id: 'camp', name: 'Peaks Of Otter Campground', mp: 85.1, lat: 37.44,
+                  lon: -79.60, kind: 'campground', label: 'Campground',
+                  offParkwayMi: 6.4, dayBreakAfter: true, nightChosen: true }];
+    localStorage.setItem('brp-trip-v2', JSON.stringify(st));
+  });
+  await p2.reload({ waitUntil: 'domcontentloaded' });
+  await p2.waitForTimeout(1500);
+  await settle(p2);
+  const dirs = await p2.evaluate(() => {
+    const pane = document.querySelector('#pane-plan');
+    const sec = [...pane.querySelectorAll('.section')]
+      .find(x => (x.querySelector('h2') || {}).textContent === 'Directions');
+    return { cards: sec ? [...sec.children].filter(n => n.tagName !== 'H2')
+               .map(n => n.textContent.replace(/\s+/g, ' ').trim()) : [] };
+  });
+
   console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff,
                                orderBefore, orderAfter, emptyList, about, wiped, routed,
-                               sameHour, lateCamp, nightRepaired, nightOff, errors }));
+                               sameHour, lateCamp, nightRepaired, nightOff, dirs, errors }));
   await b.close();
 })();
 """
@@ -519,8 +567,10 @@ def main():
     # st.off_parkway_mi where a stop carries offParkwayMi.
     check("the hop off the Parkway to a stop is charged too",
           "1 hr 52 min riding" in camp, camp[:120])
+    # 4 hr 9 before the ride BACK from the campsite existed as a leg; that leg is 25 more
+    # minutes, and the summary has to count it because the rows do.
     check("and the summary counts the same minutes the rows do",
-          "4 hr 9 min" in r["summary"], r["summary"][:130])
+          "4 hr 34 min" in r["summary"], r["summary"][:130])
     check("which is more than the Parkway alone",
           "on the Parkway" in r["summary"], r["summary"][:130])
 
@@ -562,6 +612,27 @@ def main():
     # Once said, never overwritten -- that is what nightChosen is for.
     check("and the choice is recorded so nothing derives over it",
           no["saved"] == [[False, True]], json.dumps(no["saved"]))
+
+    print("\ndirections describe the ride you are actually riding")
+    cards = js["dirs"]["cards"]
+    check("there are directions at all", len(cards) >= 5, str(len(cards)))
+    back = [c for c in cards if "Back to the Parkway" in c]
+    check("leaving the campsite is a leg of its own",
+          len(back) == 1, str([c[:44] for c in cards]))
+    check("with its own miles and minutes, not silence",
+          bool(back) and "mi" in back[0] and "min" in back[0], back[0][:90] if back else "")
+    check("and its own turn list", bool(back) and "Turn left onto" in back[0],
+          back[0][:120] if back else "")
+    # The whole point: a pump planned for the ride home must not be advertised on the way
+    # out, and the milepost filter could not tell the two apart on a round trip.
+    out_leg = next((c for c in cards if "MP 27.2 \u2192 85.1" in c or "27.2 → 85.1" in c), "")
+    home_leg = next((c for c in cards if "85.1 → 27.2" in c or "85.1 \u2192 27.2" in c), "")
+    check("both Parkway legs are described", bool(out_leg) and bool(home_leg),
+          str([c[:60] for c in cards]))
+    check("the outbound leg lists only the fuel stop on the way out",
+          "US 501" in out_leg and "US 60" not in out_leg, out_leg[:150])
+    check("and the homeward leg only the one on the way home",
+          "US 60" in home_leg and "US 501" not in home_leg, home_leg[:150])
 
     print("\nthe app can say what it is and start over")
     ab = js["about"]
