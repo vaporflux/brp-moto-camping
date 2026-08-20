@@ -1971,50 +1971,6 @@
   function renderNotes() {
     const pane = $('#pane-notes');
     pane.textContent = '';
-    const acc = D.milepost_accuracy;
-    const sections = [
-      ['Riding with no signal', 'Add this to your home screen and it installs as an app: '
-        + 'the whole planner, every campground, every fuel exit and the Parkway itself are '
-        + 'already on the phone, so it opens and plans with the radio off. Two things are '
-        + 'not. Map TILES are cached only as you look at them, so pan along your route at '
-        + 'home and that corridor stays visible in a dead zone \u2014 anywhere you have not '
-        + 'looked shows empty squares over a working map. And anything that asks Google, or '
-        + 'looks up an address, needs signal by definition; the plan itself does not.'],
-      ['Closures', `From the NPS road-closure page, as of ${D.as_of}. These change — re-check `
-        + `before you ride. The Parkway is in ${Object.keys(D.components).length} disconnected `
-        + `pieces this year; the planner refuses to route between them rather than quietly `
-        + `bridging a gate.`],
-      ['Mileposts', `Calibrated against control points; held-out accuracy is `
-        + `${acc.mean_abs_mi} mi mean, ${acc.max_abs_mi} mi worst. Good enough to place a pin, `
-        + `not good enough to print on a sign. There is no control point between MP 0 and `
-        + `177.7, so Virginia mileposts are interpolated and their error is unmeasured.`],
-      ['Fuel', `Confidence says whether a pump exists. Reachability says whether you can get `
-        + `there in 2026. They are shown separately because every combination occurs — `
-        + `MP 248.1 is on every official exit list with no verifiable station, and MP 330.9 `
-        + `is a verified station stranded inside a closed segment.`],
-      ['Junction coverage', `${D.junction_coverage.count} known crossings, about one every `
-        + `${D.junction_coverage.mean_spacing_mi} mi. This is not the complete set — it is the `
-        + `crossings the source data knows about. Between known junctions, point spacing bounds `
-        + `how far the device could shortcut, it does not prevent it. Each exported day shows `
-        + `its own worst-case gap.`],
-      ['Offline', `The page, the data and the GPX export all work with no connection. Only the `
-        + `background map tiles need signal — the Parkway, closures and your stops still draw `
-        + `without them.`]
-    ];
-    sections.forEach(([h, body]) => {
-      const s = el('div', 'section');
-      s.append(el('h2', null, h));
-      s.append(el('p', 'muted', body));
-      pane.append(s);
-    });
-    const src = el('div', 'section');
-    src.append(el('h2', null, 'Source'));
-    const a = el('a', null, D.closures_source);
-    a.href = D.closures_source; a.target = '_blank'; a.rel = 'noopener';
-    a.style.color = 'var(--sky)'; a.style.fontSize = '11px'; a.style.wordBreak = 'break-all';
-    src.append(a);
-    pane.append(src);
-
     /* This version, and how to get another one.
      *
      * An installed app has no address bar, so "reload the page" is not an instruction
@@ -2073,6 +2029,50 @@
       'Starting a new trip clears your stops and settings from this phone. It does not '
       + 'touch the campground, fuel or closure data, which ship with the app.'));
     pane.append(about);
+
+    const acc = D.milepost_accuracy;
+    const sections = [
+      ['Riding with no signal', 'Add this to your home screen and it installs as an app: '
+        + 'the whole planner, every campground, every fuel exit and the Parkway itself are '
+        + 'already on the phone, so it opens and plans with the radio off. Two things are '
+        + 'not. Map TILES are cached only as you look at them, so pan along your route at '
+        + 'home and that corridor stays visible in a dead zone \u2014 anywhere you have not '
+        + 'looked shows empty squares over a working map. And anything that asks Google, or '
+        + 'looks up an address, needs signal by definition; the plan itself does not.'],
+      ['Closures', `From the NPS road-closure page, as of ${D.as_of}. These change — re-check `
+        + `before you ride. The Parkway is in ${Object.keys(D.components).length} disconnected `
+        + `pieces this year; the planner refuses to route between them rather than quietly `
+        + `bridging a gate.`],
+      ['Mileposts', `Calibrated against control points; held-out accuracy is `
+        + `${acc.mean_abs_mi} mi mean, ${acc.max_abs_mi} mi worst. Good enough to place a pin, `
+        + `not good enough to print on a sign. There is no control point between MP 0 and `
+        + `177.7, so Virginia mileposts are interpolated and their error is unmeasured.`],
+      ['Fuel', `Confidence says whether a pump exists. Reachability says whether you can get `
+        + `there in 2026. They are shown separately because every combination occurs — `
+        + `MP 248.1 is on every official exit list with no verifiable station, and MP 330.9 `
+        + `is a verified station stranded inside a closed segment.`],
+      ['Junction coverage', `${D.junction_coverage.count} known crossings, about one every `
+        + `${D.junction_coverage.mean_spacing_mi} mi. This is not the complete set — it is the `
+        + `crossings the source data knows about. Between known junctions, point spacing bounds `
+        + `how far the device could shortcut, it does not prevent it. Each exported day shows `
+        + `its own worst-case gap.`],
+      ['Offline', `The page, the data and the GPX export all work with no connection. Only the `
+        + `background map tiles need signal — the Parkway, closures and your stops still draw `
+        + `without them.`]
+    ];
+    sections.forEach(([h, body]) => {
+      const s = el('div', 'section');
+      s.append(el('h2', null, h));
+      s.append(el('p', 'muted', body));
+      pane.append(s);
+    });
+    const src = el('div', 'section');
+    src.append(el('h2', null, 'Source'));
+    const a = el('a', null, D.closures_source);
+    a.href = D.closures_source; a.target = '_blank'; a.rel = 'noopener';
+    a.style.color = 'var(--sky)'; a.style.fontSize = '11px'; a.style.wordBreak = 'break-all';
+    src.append(a);
+    pane.append(src);
   }
 
   /* ---- map ----------------------------------------------------------------- */
@@ -2898,7 +2898,14 @@
       };
       reader.readAsText(file);
     };
-    $('#asof').textContent = `Closures as of ${D.as_of}`;
+    // The version rides in the header, not just in the Notes tab.
+    //
+    // It was at the bottom of eight sections of prose, which is the one place a rider will
+    // not look when the question is "have I even got the new version?" -- and that question
+    // is asked precisely when something is wrong and patience is short. Here it is on every
+    // screen, costs one line, and can be read out down a phone.
+    $('#asof').textContent = `Closures as of ${D.as_of}`
+                           + (window.BRP_VERSION ? ` \u00b7 ${window.BRP_VERSION}` : '');
     initMap();
     render();
   }
