@@ -398,6 +398,26 @@
     render();
   }
   const removeStop = i => { state.stops.splice(i, 1); render(); };
+
+  /* Move a stop up or down the running order.
+   *
+   * addStop drops a new stop into milepost order, which is the right guess and only a
+   * guess. A rider who finds somewhere to eat forty miles past their campsite still wants
+   * lunch before they make camp, and on a round trip milepost order means nothing at all --
+   * the same milepost is passed twice, in opposite directions.
+   *
+   * Nothing downstream needs sorting: itinerary() already reads state.stops as a sequence
+   * (the first picks the access point, the last picks the exit) and planJourney lays the
+   * whole thing out as one distance line whichever way the mileposts run. So the reorder
+   * is a swap, and render() rebuilds the plan, the fuel, the clock and the map from it.
+   */
+  function moveStop(i, delta) {
+    const j = i + delta;
+    if (j < 0 || j >= state.stops.length) return;
+    const [moved] = state.stops.splice(i, 1);
+    state.stops.splice(j, 0, moved);
+    render();
+  }
   function moveStop(i, delta) {
     const j = i + delta;
     if (j < 0 || j >= state.stops.length) return;
@@ -685,23 +705,49 @@
     const sec = el('div', 'section');
     sec.append(stepHead('2', 'Staying at'));
 
+    // Nights are numbered by the nights, not by position in the list: a lunch stop between
+    // two campsites must not turn "night 2" into "night 3".
+    let nights = 0;
     state.stops.forEach((st, i) => {
+      const meal = st.kind === 'food';
+      if (!meal) nights++;
       const row = el('div', 'picked');
       const body = el('div', 's-body');
-      body.append(el('div', 's-name',
-        `${st.name}${state.stops.length > 1 ? `  \u00b7  night ${i + 1}` : ''}`));
+      const suffix = meal ? '  \u00b7  meal stop'
+                   : state.stops.filter(x => x.kind !== 'food').length > 1
+                     ? `  \u00b7  night ${nights}` : '';
+      body.append(el('div', 's-name', `${st.name}${suffix}`));
       body.append(el('div', 's-meta',
         `MP ${st.mp.toFixed(1)}${st.label ? ' \u00b7 ' + st.label : ''}`));
       row.append(body);
+
+      // Arrows rather than drag-and-drop: this gets used in gloves, on a phone, at the
+      // roadside. A 44px button hits every time; a drag handle does not.
+      if (state.stops.length > 1) {
+        const nudge = (label, delta, hint) => {
+          const b = el('button', 'icon-btn', label);
+          b.title = hint;
+          b.setAttribute('aria-label', `${hint}: ${st.name}`);
+          b.disabled = delta < 0 ? i === 0 : i === state.stops.length - 1;
+          b.onclick = () => moveStop(i, delta);
+          return b;
+        };
+        const order = el('div', 'reorder');
+        order.append(nudge('\u2191', -1, 'Move earlier in the trip'),
+                     nudge('\u2193', 1, 'Move later in the trip'));
+        row.append(order);
+      }
+
       const del = el('button', 'icon-btn danger', '\u2715');
       del.title = 'Remove this stop';
+      del.setAttribute('aria-label', `Remove ${st.name}`);
       del.onclick = () => removeStop(i);
       row.append(del);
       sec.append(row);
     });
 
     if (state.stops.length && !state.addingStop) {
-      const more = el('button', 'btn sm ghost', '+ Add another night');
+      const more = el('button', 'btn sm ghost', '+ Add another stop');
       more.style.marginTop = '8px';
       more.onclick = () => { state.addingStop = true; render(); };
       sec.append(more);

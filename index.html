@@ -328,7 +328,9 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
     width: 100%; max-width: none; order: 2; flex: 1; min-height: 0;
     border-right: 0; border-top: 1px solid var(--line);
   }
-  header { padding: 10px 12px 8px; }
+  /* Leave room for the map/list toggle, which is fixed to the top-right of the viewport
+     and would otherwise sit on top of the title. It only exists at these widths. */
+  header { padding: 10px 158px 8px 12px; }
   header h1 { font-size: 14px; }
   .tabs button { font-size: 11.5px; }
   /* Bigger targets and no hover-only affordances on touch. */
@@ -351,6 +353,20 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
 .picked .s-body { flex: 1; min-width: 0; }
 .picked .s-name { font-size: 13px; font-weight: 600; }
 .picked .s-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+/* Reordering the trip. Two arrows rather than a drag handle, because this gets used in
+   gloves, on a phone, at the roadside -- a button is hit reliably and a drag is not. They
+   stack so the pair costs the width of one control on a narrow screen. */
+.reorder { display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; }
+.reorder .icon-btn { width: 30px; height: 21px; font-size: 11px; }
+.icon-btn:disabled { opacity: .3; cursor: default; }
+.icon-btn:disabled:hover { color: var(--dim); border-color: var(--line); }
+
+@media (max-width: 860px) {
+  /* Touch targets win over compactness: the pair becomes a proper 44px column. */
+  .reorder { gap: 4px; }
+  .reorder .icon-btn { width: 40px; height: 30px; font-size: 13px; }
+}
 
 /* Numbered steps: the number is a marker, not part of the sentence. */
 .step-head { display: flex; align-items: center; gap: 8px; }
@@ -2470,6 +2486,26 @@ const LEGEND_FOOTER =
     render();
   }
   const removeStop = i => { state.stops.splice(i, 1); render(); };
+
+  /* Move a stop up or down the running order.
+   *
+   * addStop drops a new stop into milepost order, which is the right guess and only a
+   * guess. A rider who finds somewhere to eat forty miles past their campsite still wants
+   * lunch before they make camp, and on a round trip milepost order means nothing at all --
+   * the same milepost is passed twice, in opposite directions.
+   *
+   * Nothing downstream needs sorting: itinerary() already reads state.stops as a sequence
+   * (the first picks the access point, the last picks the exit) and planJourney lays the
+   * whole thing out as one distance line whichever way the mileposts run. So the reorder
+   * is a swap, and render() rebuilds the plan, the fuel, the clock and the map from it.
+   */
+  function moveStop(i, delta) {
+    const j = i + delta;
+    if (j < 0 || j >= state.stops.length) return;
+    const [moved] = state.stops.splice(i, 1);
+    state.stops.splice(j, 0, moved);
+    render();
+  }
   function moveStop(i, delta) {
     const j = i + delta;
     if (j < 0 || j >= state.stops.length) return;
@@ -2757,23 +2793,49 @@ const LEGEND_FOOTER =
     const sec = el('div', 'section');
     sec.append(stepHead('2', 'Staying at'));
 
+    // Nights are numbered by the nights, not by position in the list: a lunch stop between
+    // two campsites must not turn "night 2" into "night 3".
+    let nights = 0;
     state.stops.forEach((st, i) => {
+      const meal = st.kind === 'food';
+      if (!meal) nights++;
       const row = el('div', 'picked');
       const body = el('div', 's-body');
-      body.append(el('div', 's-name',
-        `${st.name}${state.stops.length > 1 ? `  \u00b7  night ${i + 1}` : ''}`));
+      const suffix = meal ? '  \u00b7  meal stop'
+                   : state.stops.filter(x => x.kind !== 'food').length > 1
+                     ? `  \u00b7  night ${nights}` : '';
+      body.append(el('div', 's-name', `${st.name}${suffix}`));
       body.append(el('div', 's-meta',
         `MP ${st.mp.toFixed(1)}${st.label ? ' \u00b7 ' + st.label : ''}`));
       row.append(body);
+
+      // Arrows rather than drag-and-drop: this gets used in gloves, on a phone, at the
+      // roadside. A 44px button hits every time; a drag handle does not.
+      if (state.stops.length > 1) {
+        const nudge = (label, delta, hint) => {
+          const b = el('button', 'icon-btn', label);
+          b.title = hint;
+          b.setAttribute('aria-label', `${hint}: ${st.name}`);
+          b.disabled = delta < 0 ? i === 0 : i === state.stops.length - 1;
+          b.onclick = () => moveStop(i, delta);
+          return b;
+        };
+        const order = el('div', 'reorder');
+        order.append(nudge('\u2191', -1, 'Move earlier in the trip'),
+                     nudge('\u2193', 1, 'Move later in the trip'));
+        row.append(order);
+      }
+
       const del = el('button', 'icon-btn danger', '\u2715');
       del.title = 'Remove this stop';
+      del.setAttribute('aria-label', `Remove ${st.name}`);
       del.onclick = () => removeStop(i);
       row.append(del);
       sec.append(row);
     });
 
     if (state.stops.length && !state.addingStop) {
-      const more = el('button', 'btn sm ghost', '+ Add another night');
+      const more = el('button', 'btn sm ghost', '+ Add another stop');
       more.style.marginTop = '8px';
       more.onclick = () => { state.addingStop = true; render(); };
       sec.append(more);

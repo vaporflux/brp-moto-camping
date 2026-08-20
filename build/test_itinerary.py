@@ -132,7 +132,40 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
              summary: (document.querySelector('#pane-plan .alert') || {}).textContent || '' };
   });
 
-  console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff, errors }));
+  // Reordering. A stop is dropped in at its milepost, which is a guess -- a rider who finds
+  // lunch forty miles past their campsite still wants to eat before they make camp.
+  await p.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem('brp-trip-v2'));
+    st.tankMi = 200; st.parkwayMph = 40; st.startTime = '09:00';
+    st.stops = [
+      { id: 'camp', name: 'Peaks Of Otter Campground', mp: 85.1, lat: 37.44, lon: -79.60,
+        kind: 'campground', label: 'Campground', dayBreakAfter: true },
+      { id: 'diner', name: 'Smokehouse BBQ', mp: 120.4, lat: 37.28, lon: -79.85,
+        kind: 'food', label: 'Somewhere to eat', dayBreakAfter: false },
+    ];
+    localStorage.setItem('brp-trip-v2', JSON.stringify(st));
+  });
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForTimeout(2200);
+  const snapOrder = () => p.evaluate(() => ({
+    picked: [...document.querySelectorAll('#pane-plan .picked .s-name')].map(n => n.textContent),
+    steps: [...document.querySelectorAll('#pane-plan .stop')]
+             .map(n => n.textContent.replace(/\s+/g, ' ').trim()),
+    stored: (JSON.parse(localStorage.getItem('brp-trip-v2') || '{}').stops || [])
+              .map(x => x.name),
+  }));
+  const orderBefore = await snapOrder();
+  await p.evaluate(() => {
+    // Step 1's chosen start is also a .picked row, so pick by name rather than by index.
+    [...document.querySelectorAll('#pane-plan .picked')]
+      .find(n => /Smokehouse/.test(n.textContent))
+      .querySelector('.reorder .icon-btn').click();          // move it earlier
+  });
+  await p.waitForTimeout(2200);
+  const orderAfter = await snapOrder();
+
+  console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff,
+                               orderBefore, orderAfter, errors }));
   await b.close();
 })();
 """
@@ -296,6 +329,36 @@ def main():
         # A day break on a lunch stop is the rider's data, not an instruction to sleep.
         check("and does not roll the clock to the next morning",
               "(day" not in meal["text"], meal["text"][-60:])
+
+    print("\nthe trip runs in the order you put it in")
+    ob, oa = js["orderBefore"], js["orderAfter"]
+
+    def idx(rows, name):
+        return next((i for i, r in enumerate(rows) if name in r), -1)
+
+    check("a stop lands in milepost order to begin with",
+          ob["stored"] == ["Peaks Of Otter Campground", "Smokehouse BBQ"],
+          str(ob["stored"]))
+    check("moving one earlier reorders the trip",
+          oa["stored"] == ["Smokehouse BBQ", "Peaks Of Otter Campground"],
+          str(oa["stored"]))
+    check("and the choice survives being saved", "Smokehouse" in oa["picked"][1],
+          str(oa["picked"]))
+    check("the itinerary follows the new order, not the mileposts",
+          idx(oa["steps"], "Smokehouse") < idx(oa["steps"], "Peaks Of Otter"),
+          str([r[:34] for r in oa["steps"]]))
+    # The whole plan has to be rebuilt, not just the list: what was an intermediate
+    # overnight is now the last stop, and the fuel simulation runs a different route.
+    camp_before = next(r for r in ob["steps"] if "Peaks Of Otter" in r)
+    camp_after = next(r for r in oa["steps"] if "Peaks Of Otter" in r)
+    check("a stop that becomes the last one stops being an intermediate night",
+          "Overnight" in camp_before and "Camp here" in camp_after,
+          f"{camp_before[:60]} -> {camp_after[:60]}")
+    check("and the fuel figures are recomputed for the new route",
+          camp_before != camp_after, camp_after[:80])
+    after_times = [minutes(m) for m in (TIME.search(r) for r in oa["steps"]) if m]
+    check("times still only move forward afterwards",
+          after_times == sorted(after_times), str(after_times))
 
     check("the page raised no errors", not js["errors"], str(js["errors"][:3]))
 

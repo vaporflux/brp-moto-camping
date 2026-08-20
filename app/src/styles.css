@@ -293,7 +293,9 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
     width: 100%; max-width: none; order: 2; flex: 1; min-height: 0;
     border-right: 0; border-top: 1px solid var(--line);
   }
-  header { padding: 10px 12px 8px; }
+  /* Leave room for the map/list toggle, which is fixed to the top-right of the viewport
+     and would otherwise sit on top of the title. It only exists at these widths. */
+  header { padding: 10px 158px 8px 12px; }
   header h1 { font-size: 14px; }
   .tabs button { font-size: 11.5px; }
   /* Bigger targets and no hover-only affordances on touch. */
@@ -316,6 +318,20 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
 .picked .s-body { flex: 1; min-width: 0; }
 .picked .s-name { font-size: 13px; font-weight: 600; }
 .picked .s-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+/* Reordering the trip. Two arrows rather than a drag handle, because this gets used in
+   gloves, on a phone, at the roadside -- a button is hit reliably and a drag is not. They
+   stack so the pair costs the width of one control on a narrow screen. */
+.reorder { display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; }
+.reorder .icon-btn { width: 30px; height: 21px; font-size: 11px; }
+.icon-btn:disabled { opacity: .3; cursor: default; }
+.icon-btn:disabled:hover { color: var(--dim); border-color: var(--line); }
+
+@media (max-width: 860px) {
+  /* Touch targets win over compactness: the pair becomes a proper 44px column. */
+  .reorder { gap: 4px; }
+  .reorder .icon-btn { width: 40px; height: 30px; font-size: 13px; }
+}
 
 /* Numbered steps: the number is a marker, not part of the sentence. */
 .step-head { display: flex; align-items: center; gap: 8px; }
