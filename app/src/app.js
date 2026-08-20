@@ -27,6 +27,9 @@
     // of riding before a single overlook. Defaults are deliberately honest rather than
     // flattering.
     startTime: '09:00',
+    // Day one leaves from a house; every morning after leaves from a campsite, and those
+    // are rarely the same hour. Breaking camp takes longer than closing a front door.
+    campTime: '09:00',
     parkwayMph: 40,
     tankMi: 200,              // usable miles on a tank. NOT a GSA assumption.
     start: null,              // {lat, lon, label} — where the rider actually begins
@@ -85,7 +88,8 @@
         name: state.name, stops: state.stops, arriveMinMi: state.arriveMinMi,
         maxFuelDetourMi: state.maxFuelDetourMi, checklist: state.checklist,
         device: state.device, tankMi: state.tankMi,
-        startTime: state.startTime, parkwayMph: state.parkwayMph,
+        startTime: state.startTime, campTime: state.campTime,
+        parkwayMph: state.parkwayMph,
         start: state.start, accessMp: state.accessMp,
         finish: state.finish, endPoint: state.endPoint,
         stayWithinMi: state.stayWithinMi,
@@ -1162,6 +1166,18 @@
    *
    * So: the real routed duration where there is one, the flat rate only where there is not
    * -- which is the offline case, and a fuel detour, where all we have is a radius. */
+  /* Miles for a leg that leaves the Parkway, preferring what the router actually measured.
+   *
+   * Same reasoning as legMinutes: the fallback is a straight line multiplied by a road
+   * factor, and roads are not straight. The tilde stays on the estimate and comes off the
+   * measurement, so the rider can tell which one they are reading. */
+  function legMiles(leg, fallbackMi) {
+    const road = leg && Directions.peek(leg.from, leg.to);
+    if (road && road.ok && road.distance_mi > 0) return { mi: road.distance_mi, real: true };
+    return { mi: fallbackMi || 0, real: false };
+  }
+  const miLabel = d => `${d.real ? '' : '~'}${d.mi} mi`;
+
   function legMinutes(leg, fallbackMi) {
     const road = leg && Directions.peek(leg.from, leg.to);
     if (road && road.ok && road.duration_min > 0) return road.duration_min;
@@ -1175,10 +1191,14 @@
 
   /* Minutes since midnight on the day the rider sets off. Overnights push the clock to the
    * next morning's start time rather than letting it run through the night. */
-  function startMinutes() {
-    const m = /^(\d{1,2}):(\d{2})$/.exec(state.startTime || '09:00');
-    return m ? (+m[1]) * 60 + (+m[2]) : 9 * 60;
-  }
+  const _clockMinutes = (text, fallback) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(text || '');
+    return m ? (+m[1]) * 60 + (+m[2]) : fallback;
+  };
+  function startMinutes() { return _clockMinutes(state.startTime, 9 * 60); }
+  /* The hour the rider rolls out of a campsite, which is not the hour they left the house.
+   * Every leg after an overnight -- including the ride home -- is timed from this. */
+  function campMinutes() { return _clockMinutes(state.campTime, startMinutes()); }
 
   function clockLabel(minutes) {
     const day = Math.floor(minutes / 1440);
@@ -1238,9 +1258,23 @@
       else { e.target.value = state.startTime; }
     };
     when.append(t);
-    rowC.append(when);
-    rowC.append(mk('parkwayMph', 'Average speed on the Parkway', 15, 45, 'mph'));
+    const camp = el('label', 'field');
+    camp.append(el('span', null, 'Leaving camp at'));
+    const t2 = el('input');
+    t2.type = 'time';
+    t2.value = state.campTime;
+    t2.setAttribute('aria-label', 'Leaving camp at');
+    t2.onchange = e => {
+      if (/^\d{2}:\d{2}$/.test(e.target.value)) { state.campTime = e.target.value; render(); }
+      else { e.target.value = state.campTime; }
+    };
+    camp.append(t2);
+    camp.append(el('span', 'tiny', 'every morning after the first'));
+    rowC.append(when, camp);
     sec.append(rowC);
+    const rowD = el('div', 'field-row');
+    rowD.append(mk('parkwayMph', 'Average speed on the Parkway', 15, 45, 'mph'));
+    sec.append(rowD);
     sec.append(el('p', 'tiny',
       'The Parkway is signed at 45 mph and a lot of it is 35, so the clock matters more '
       + 'here than the mileage does: 469 miles at 40 mph is nearly twelve hours in the '
@@ -1416,8 +1450,10 @@
     const timeLine = `About ${durationLabel(movingMin / 60)} moving at `
                    + `${state.parkwayMph} mph on the Parkway, before you stop to look at `
                    + `anything.`;
-    summary.textContent = `~${c.approachMi} mi in, ${trip.parkwayMi} mi on the Parkway`
-                        + (rideOut ? `, ~${rideOut} mi out` : '')
+    const sumIn = legMiles(legs.find(l => l.id === 'in'), c.approachMi || 0);
+    const sumOut = legMiles(legs.find(l => l.id === 'out'), rideOut);
+    summary.textContent = `${miLabel(sumIn)} in, ${trip.parkwayMi} mi on the Parkway`
+                        + (rideOut ? `, ${miLabel(sumOut)} out` : '')
                         + `. ${timeLine} ${fuelLine}`;
     sec.append(summary);
     // Say what the fuel plan does NOT cover. This dataset maps fuel at Parkway exits and
@@ -1451,8 +1487,9 @@
       const leg = durationLabel(ev.legHours || 0);
       return ` \u00b7 ${leg ? `${leg} riding \u00b7 ` : ''}arrive about ${clockLabel(ev.atMin)}`;
     };
+    const inMi = legMiles((trip.roadLegs || []).find(l => l.id === 'in'), c.approachMi || 0);
     steps.append(stepRow('HOME', state.start.label,
-                         `Ride ~${c.approachMi} mi to the Parkway`
+                         `${miLabel(inMi)} to the Parkway at MP ${c.mp}`
                          + ` \u00b7 leave about ${clockLabel(startMinutes())}`));
 
     const wpos = (f.ok && f.waypointPos) ? f.waypointPos : null;
@@ -1494,7 +1531,9 @@
       (sev ? `Closest entry that can actually reach your stop. MP ${sev.mp} (${sev.name}) `
            + `is ${sev.savedMi} mi nearer to you, but the Parkway is severed between there `
            + `and here, so it cannot get you to this stop.`
-           : 'Closest entry from where you are starting') + timeSuffix(onParkway));
+           : 'Closest entry from where you are starting')
+      + ` \u00b7 ${miLabel(inMi)} from ${state.start.label.split(',')[0]}`
+      + timeSuffix(onParkway));
     events.push(onParkway);
 
     state.stops.forEach((st, i) => {
@@ -1597,7 +1636,7 @@
       clock += ev.dwellMin || 0;
       if (ev.overnight) {
         // Next morning, at the hour the rider said they set off.
-        clock = (Math.floor(clock / 1440) + 1) * 1440 + startMinutes();
+        clock = (Math.floor(clock / 1440) + 1) * 1440 + campMinutes();
       }
       lastPos = ev.pos;
     });
@@ -1609,8 +1648,9 @@
       const finishMin = (events.length ? events[events.length - 1].atMin : startMinutes())
                       + outMin;
       const outLabel = durationLabel(outMin / 60);
+      const outMi = legMiles(legOut, trip.exitPoint.rideOutMi || 0);
       steps.append(stepRow('FINISH', trip.endLabel,
-        `Ride ~${trip.exitPoint.rideOutMi} mi from the Parkway to here`
+        `${miLabel(outMi)} from the Parkway to here`
         + (outLabel ? ` \u00b7 ${outLabel} riding` : '')
         + ` \u00b7 arrive about ${clockLabel(finishMin)}`, 'ok'));
     }

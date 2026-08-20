@@ -241,7 +241,11 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
               lon: -79.60, kind: 'campground', label: 'Campground',
               offParkwayMi: 6.4, dayBreakAfter: false }],
     finish: 'home', tankMi: 200, startTime: '09:00', parkwayMph: 40 });
-  await p2.addInitScript(t => localStorage.setItem('brp-trip-v2', JSON.stringify(t)), seed());
+  await p2.addInitScript(t => {
+    if (sessionStorage.getItem('seeded')) return;
+    sessionStorage.setItem('seeded', '1');
+    localStorage.setItem('brp-trip-v2', JSON.stringify(t));
+  }, seed());
   await p2.goto('file://' + process.env.PAGE, { waitUntil: 'domcontentloaded' });
   await p2.waitForTimeout(3500);
   const routed = await p2.evaluate(() => ({
@@ -250,9 +254,23 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     summary: (document.querySelector('#pane-plan .alert') || {}).textContent || '',
   }));
 
+  // Breaking camp is not the same hour as closing a front door, and the ride home is timed
+  // from the campsite rather than from the house.
+  const reseed = async patch => {
+    await p2.evaluate(t => localStorage.setItem('brp-trip-v2', JSON.stringify(t)),
+                      Object.assign(seed(), { stops: [Object.assign({}, seed().stops[0],
+                                                      { dayBreakAfter: true })] }, patch));
+    await p2.reload({ waitUntil: 'domcontentloaded' });
+    await p2.waitForTimeout(3000);
+    return p2.evaluate(() => [...document.querySelectorAll('#pane-plan .stop')]
+      .map(n => n.textContent.replace(/\s+/g, ' ').trim()));
+  };
+  const sameHour = await reseed({ startTime: '07:00', campTime: '07:00' });
+  const lateCamp = await reseed({ startTime: '07:00', campTime: '10:30' });
+
   console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff,
                                orderBefore, orderAfter, emptyList, about, wiped, routed,
-                               errors }));
+                               sameHour, lateCamp, errors }));
   await b.close();
 })();
 """
@@ -472,6 +490,30 @@ def main():
           "4 hr 9 min" in r["summary"], r["summary"][:130])
     check("which is more than the Parkway alone",
           "on the Parkway" in r["summary"], r["summary"][:130])
+
+    print("\nleaving camp is its own hour, and the miles are measured")
+    home = next((x for x in js["routed"]["rows"] if x.startswith("HOME")), "")
+    join = next((x for x in js["routed"]["rows"] if "Get on the Parkway" in x), "")
+    check("the ride in states the miles from home to the entry point",
+          "9 mi to the Parkway at MP" in home, home[:100])
+    check("and the entry row repeats it against the time it takes",
+          "9 mi from" in join, join[:110])
+    # A routed distance loses the tilde; an estimated one keeps it. base[] ran with no
+    # router at all, so its rows are the estimate.
+    est = next((x for x in js["base"]["rows"] if x.startswith("HOME")), "")
+    check("an estimated distance still says so with a tilde", "~" in est, est[:80])
+    check("a measured one does not", "~" not in home.split("leave")[0], home[:80])
+
+    def finish_of(rows):
+        return next((x for x in rows if x.startswith("FINISH")), "")
+    a, bb = finish_of(js["sameHour"]), finish_of(js["lateCamp"])
+    ta, tb = TIME.search(a), TIME.search(bb)
+    check("both trips reach a finish time", bool(ta) and bool(tb), f"{a[-40:]} | {bb[-40:]}")
+    if ta and tb:
+        # One overnight, camp departure moved 3.5 hours later: the ride home moves with it.
+        check("breaking camp later moves the ride home by exactly that much",
+              minutes(tb) - minutes(ta) == 210,
+              f"{minutes(ta)} -> {minutes(tb)} ({minutes(tb) - minutes(ta)} min)")
 
     print("\nthe app can say what it is and start over")
     ab = js["about"]
