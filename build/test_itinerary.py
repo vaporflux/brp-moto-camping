@@ -216,8 +216,43 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
              plan: document.querySelector('#pane-plan').textContent.replace(/\s+/g, ' ').slice(0, 60) };
   });
 
+  /* The ride in is not free, and it is not 50 mph either.
+   *
+   * A second page, with a router that answers, so the existing checks above keep their
+   * offline baseline. The clock used to divide an ESTIMATED approach distance by a flat
+   * rate -- a guess on top of a guess -- while the turn-by-turn panel two sections below
+   * was already printing Google's real duration for the same leg.
+   */
+  const p2 = await (await b.newContext({ viewport: { width: 520, height: 1300 } })).newPage();
+  await p2.route('**/*', r => {
+    const u = r.request().url();
+    if (u.includes('/api/route')) {
+      // Nine miles of switchbacks that genuinely take 25 minutes, not 11.
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        ok: true, distance_mi: 9.0, duration_min: 25,
+        polyline: [[37.93, -79.05], [37.89, -79.15]], legs: [], steps: [] }) });
+    }
+    return u.startsWith('file:') ? r.continue()
+      : r.fulfill({ status: 200, contentType: 'image/png', body: TILE });
+  });
+  const seed = () => ({
+    start: { lat: 37.93, lon: -79.05, label: 'Waynesboro, VA' },
+    stops: [{ id: 'camp', name: 'Peaks Of Otter Campground', mp: 85.1, lat: 37.44,
+              lon: -79.60, kind: 'campground', label: 'Campground',
+              offParkwayMi: 6.4, dayBreakAfter: false }],
+    finish: 'home', tankMi: 200, startTime: '09:00', parkwayMph: 40 });
+  await p2.addInitScript(t => localStorage.setItem('brp-trip-v2', JSON.stringify(t)), seed());
+  await p2.goto('file://' + process.env.PAGE, { waitUntil: 'domcontentloaded' });
+  await p2.waitForTimeout(3500);
+  const routed = await p2.evaluate(() => ({
+    rows: [...document.querySelectorAll('#pane-plan .stop')]
+      .map(n => n.textContent.replace(/\s+/g, ' ').trim()),
+    summary: (document.querySelector('#pane-plan .alert') || {}).textContent || '',
+  }));
+
   console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff,
-                               orderBefore, orderAfter, emptyList, about, wiped, errors }));
+                               orderBefore, orderAfter, emptyList, about, wiped, routed,
+                               errors }));
   await b.close();
 })();
 """
@@ -419,6 +454,24 @@ def main():
           and e["after"]["chars"] > 500, json.dumps(e["after"]))
     check("and says why the list is empty rather than showing nothing",
           "Food comes from Google" in e["after"]["empty"], e["after"]["empty"][:90])
+
+    print("\nthe ride in is on the clock, at the road's own speed")
+    r = js["routed"]
+    join = next((x for x in r["rows"] if "Get on the Parkway" in x), "")
+    camp = next((x for x in r["rows"] if "Peaks Of Otter" in x), "")
+    finish = next((x for x in r["rows"] if "FINISH" in x), "")
+    # 9 mi at the flat 50 mph would read 11 min. The router said 25, so 25 is what counts.
+    check("the approach uses the router's real duration, not a flat rate",
+          "25 min riding" in join, join[:110])
+    check("so does the ride home", "25 min riding" in finish, finish[:110])
+    # The hop off the Parkway to a campsite used to cost nothing at all: the clock read
+    # st.off_parkway_mi where a stop carries offParkwayMi.
+    check("the hop off the Parkway to a stop is charged too",
+          "1 hr 52 min riding" in camp, camp[:120])
+    check("and the summary counts the same minutes the rows do",
+          "4 hr 9 min" in r["summary"], r["summary"][:130])
+    check("which is more than the Parkway alone",
+          "on the Parkway" in r["summary"], r["summary"][:130])
 
     print("\nthe app can say what it is and start over")
     ab = js["about"]

@@ -1147,9 +1147,26 @@
    * A clock that quietly padded itself would be worse than none -- it would be wrong in a
    * direction nobody could see.
    */
-  const OFF_PARKWAY_MPH = 50;   // secondary roads to a campsite or a pump
+  const OFF_PARKWAY_MPH = 50;   // fallback only: secondary roads, when no router answered
   const FUEL_STOP_MIN = 10;     // off the bike, tank filled, back on
   const MEAL_STOP_MIN = 45;     // sat down, ordered, eaten, paid
+
+  /* Minutes for a leg that leaves the Parkway.
+   *
+   * The router already answers this properly -- Google returns a duration for every leg,
+   * and the turn-by-turn panel has been printing it all along -- but the clock was not
+   * asking. It divided an ESTIMATED distance by a flat 50 mph, which is a guess laid on top
+   * of a guess: the approach distance is itself a straight line multiplied by a road
+   * factor. Two hundred miles of interstate and forty miles of switchbacks came out at the
+   * same speed.
+   *
+   * So: the real routed duration where there is one, the flat rate only where there is not
+   * -- which is the offline case, and a fuel detour, where all we have is a radius. */
+  function legMinutes(leg, fallbackMi) {
+    const road = leg && Directions.peek(leg.from, leg.to);
+    if (road && road.ok && road.duration_min > 0) return road.duration_min;
+    return ((fallbackMi || 0) / OFF_PARKWAY_MPH) * 60;
+  }
 
   function hoursFor(parkwayMi, offParkwayMi = 0) {
     const mph = Math.max(5, state.parkwayMph || 40);
@@ -1383,12 +1400,22 @@
     // Riding time, not elapsed time: overnights and lunch are the rider's own. At 40 mph a
     // 469 mile Parkway run is close to twelve hours, which is the fact the mileage hides
     // and the reason this line exists at all.
-    const ridingHours = hoursFor(trip.parkwayMi || 0,
-                                 (c.approachMi || 0) + rideOut
-                                 + (f.ok ? f.stops.reduce((a, x) => a + (x.detourMi || 0) * 2, 0) : 0));
-    const pumpMin = f.ok ? f.stops.length * FUEL_STOP_MIN : 0;
-    const timeLine = `About ${durationLabel(ridingHours + pumpMin / 60)} moving at `
-                   + `${state.parkwayMph} mph, before you stop to look at anything.`;
+    // The same minutes the rows below add up to: real routed times for the ride in, the
+    // hops off to each stop and the ride home; the flat rate only for a fuel detour, where
+    // all anyone has is a radius.
+    const legs = trip.roadLegs || [];
+    const offMin = legs.reduce((a, l) => a + legMinutes(
+      l, l.id === 'in' ? (c.approachMi || 0)
+       : l.id === 'out' ? rideOut
+       : (l.stop && l.stop.offParkwayMi) || 0), 0);
+    const detourMin = f.ok
+      ? f.stops.reduce((a, x) => a + (x.detourMi || 0) * 2, 0) / OFF_PARKWAY_MPH * 60 : 0;
+    const movingMin = hoursFor(trip.parkwayMi || 0) * 60 + offMin + detourMin
+                    + (f.ok ? f.stops.length * FUEL_STOP_MIN : 0)
+                    + state.stops.filter(x => x.kind === 'food').length * MEAL_STOP_MIN;
+    const timeLine = `About ${durationLabel(movingMin / 60)} moving at `
+                   + `${state.parkwayMph} mph on the Parkway, before you stop to look at `
+                   + `anything.`;
     summary.textContent = `~${c.approachMi} mi in, ${trip.parkwayMi} mi on the Parkway`
                         + (rideOut ? `, ~${rideOut} mi out` : '')
                         + `. ${timeLine} ${fuelLine}`;
@@ -1459,7 +1486,9 @@
         'fuel') });
     }
 
-    const onParkway = { pos: wpos ? wpos[0] : 0, order: 0, offMi: c.approachMi || 0 };
+    const legIn = (trip.roadLegs || []).find(l => l.id === 'in');
+    const onParkway = { pos: wpos ? wpos[0] : 0, order: 0, offMi: c.approachMi || 0,
+                        leg: legIn };
     onParkway.row = () => stepRow(
       `MP ${c.mp}`, `Get on the Parkway — ${c.name}`,
       (sev ? `Closest entry that can actually reach your stop. MP ${sev.mp} (${sev.name}) `
@@ -1473,7 +1502,11 @@
       const last = i === state.stops.length - 1;
       const meal = st.kind === 'food';
       const ev = { pos: wpos ? wpos[i + 1] : i + 1, order: 1,
-                   offMi: st.off_parkway_mi || 0,
+                   // offParkwayMi, not off_parkway_mi. A stop comes from BRP.placeStop,
+                   // which writes the camelCase name -- so this read undefined and the ride
+                   // out to a campsite six miles off the Parkway cost no time at all.
+                   offMi: st.offParkwayMi || 0,
+                   leg: (trip.roadLegs || []).find(l => l.id === `off-${st.id}`),
                    // Only a day break the rider actually set stops the clock. A stop they
                    // ride straight through is a waypoint, not a night -- and a meal never
                    // is one, whatever else it is.
@@ -1554,8 +1587,11 @@
       // The top-off happens during the ride in, which the "get on the Parkway" row already
       // charges for. Giving it a row of its own must not give it a duration of its own.
       if (ev.order === -1) { ev.legHours = 0; ev.atMin = clock; return; }
-      const legHours = hoursFor(Math.max(0, ev.pos - lastPos), ev.offMi || 0);
+      const parkwayMin = hoursFor(Math.max(0, ev.pos - lastPos)) * 60;
+      const offMin = ev.leg ? legMinutes(ev.leg, ev.offMi) : (ev.offMi || 0) / OFF_PARKWAY_MPH * 60;
+      const legHours = (parkwayMin + offMin) / 60;
       ev.legHours = legHours;
+      ev.routed = !!(ev.leg && (Directions.peek(ev.leg.from, ev.leg.to) || {}).ok);
       clock += legHours * 60;
       ev.atMin = clock;
       clock += ev.dwellMin || 0;
@@ -1568,11 +1604,14 @@
     events.forEach(e => steps.append(e.row()));
 
     if (trip.exitPoint) {
-      const outHours = hoursFor(0, trip.exitPoint.rideOutMi || 0);
+      const legOut = (trip.roadLegs || []).find(l => l.id === 'out');
+      const outMin = legMinutes(legOut, trip.exitPoint.rideOutMi || 0);
       const finishMin = (events.length ? events[events.length - 1].atMin : startMinutes())
-                      + outHours * 60;
+                      + outMin;
+      const outLabel = durationLabel(outMin / 60);
       steps.append(stepRow('FINISH', trip.endLabel,
         `Ride ~${trip.exitPoint.rideOutMi} mi from the Parkway to here`
+        + (outLabel ? ` \u00b7 ${outLabel} riding` : '')
         + ` \u00b7 arrive about ${clockLabel(finishMin)}`, 'ok'));
     }
     wrap.append(steps);
