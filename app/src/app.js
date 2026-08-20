@@ -738,9 +738,9 @@
         const noFoodYet = state[f.kind] === 'food'
                        && !(D.places || []).some(c => c.kind === 'food');
         list.append(el('div', 'empty', noFoodYet
-          ? 'No food in the offline list yet — this dataset was built before restaurants '
-          + 'were added to the map pull. Use the Google search below to find somewhere to '
-          + 'eat, or re-run build/fetch_osm.py to bake them in.'
+          ? 'Food comes from Google rather than the offline list — places to eat change '
+          + 'hands and hours far too often to be worth baking in. Tap the search below and '
+          + 'they will appear here and on the map.'
           : 'Nothing matches. Loosen a filter, or widen the distance.'));
         return;
       }
@@ -841,7 +841,11 @@
       state.previewId = null;
     };
     const isFuel = c.kind === 'fuel';
-    const add = el('button', 'btn primary', isFuel ? 'Add as a fuel stop' : 'Stay here');
+    const isFood = c.kind === 'food';
+    // "Stay here" on a diner is the app telling the rider it has not understood what they
+    // just picked. Every category gets the verb that belongs to it.
+    const add = el('button', 'btn primary',
+                   isFuel ? 'Add as a fuel stop' : isFood ? 'Eat here' : 'Stay here');
     add.onclick = () => {
       const stop = isFuel ? BRP.asStop(c._fuel) : BRP.placeStop(c);
       dismiss();
@@ -849,7 +853,8 @@
       state.addingStop = false;
       addStop(stop);
     };
-    const shut = el('button', 'btn ghost', isFuel ? 'Close' : 'Not this one');
+    const shut = el('button', 'btn ghost',
+                    (isFuel || isFood) ? 'Close' : 'Not this one');
     shut.onclick = () => { dismiss(); render(); };
     row.append(add, shut);
     if (c.url) {
@@ -1042,6 +1047,7 @@
    */
   const OFF_PARKWAY_MPH = 50;   // secondary roads to a campsite or a pump
   const FUEL_STOP_MIN = 10;     // off the bike, tank filled, back on
+  const MEAL_STOP_MIN = 45;     // sat down, ordered, eaten, paid
 
   function hoursFor(parkwayMi, offParkwayMi = 0) {
     const mph = Math.max(5, state.parkwayMph || 40);
@@ -1346,16 +1352,23 @@
     state.stops.forEach((st, i) => {
       const t = tankAt[i + 1];
       const last = i === state.stops.length - 1;
+      const meal = st.kind === 'food';
       const ev = { pos: wpos ? wpos[i + 1] : i + 1, order: 1,
                    offMi: st.off_parkway_mi || 0,
                    // Only a day break the rider actually set stops the clock. A stop they
-                   // ride straight through is a waypoint, not a night.
-                   overnight: !!st.dayBreakAfter };
+                   // ride straight through is a waypoint, not a night -- and a meal never
+                   // is one, whatever else it is.
+                   overnight: !meal && !!st.dayBreakAfter,
+                   // Long enough to sit down and eat. Not padding: a rider who plans lunch
+                   // and then arrives everywhere 45 minutes early has been told a fiction.
+                   dwellMin: meal ? MEAL_STOP_MIN : 0 };
       ev.row = () => stepRow(
         `MP ${st.mp.toFixed(1)}`, st.name,
-        [last && !trip.exitPoint ? 'Arrive' : (last ? 'Camp here' : `Overnight ${i + 1}`),
+        [meal ? 'Eat here'
+              : last && !trip.exitPoint ? 'Arrive'
+              : last ? 'Camp here' : `Overnight ${i + 1}`,
          t != null ? `about ${t} mi of fuel in the tank` : null]
-        .filter(Boolean).join(' \u00b7 ') + timeSuffix(ev), 'ok');
+        .filter(Boolean).join(' \u00b7 ') + timeSuffix(ev), meal ? 'food' : 'ok');
       events.push(ev);
     });
 
@@ -1630,6 +1643,9 @@
     if (level === 'ok') name.style.color = 'var(--ok)';
     if (level === 'warn' || level === 'fuel') name.style.color = 'var(--warn)';
     if (level === 'alert') name.style.color = 'var(--rust)';
+    // The same purple the food glyph uses. A step's colour and its pin should agree, or
+    // the itinerary and the map are two different keys for one trip.
+    if (level === 'food') name.style.color = 'var(--food)';
     body.append(name);
     if (detail) body.append(el('div', 's-meta', detail));
     node.append(body);
@@ -1704,9 +1720,9 @@
         const noFoodYet = state[f.kind] === 'food'
                        && !(D.places || []).some(c => c.kind === 'food');
         list.append(el('div', 'empty', noFoodYet
-          ? 'No food in the offline list yet — this dataset was built before restaurants '
-          + 'were added to the map pull. Use the Google search below to find somewhere to '
-          + 'eat, or re-run build/fetch_osm.py to bake them in.'
+          ? 'Food comes from Google rather than the offline list — places to eat change '
+          + 'hands and hours far too often to be worth baking in. Tap the search below and '
+          + 'they will appear here and on the map.'
           : 'Nothing matches. Loosen a filter, or widen the distance.'));
         return;
       }
@@ -2331,12 +2347,33 @@
    * appeared in the itinerary with no card, no confirmation and no obvious way to see what
    * had just happened.
    */
+  /* Everything the map can draw as a place: the baked-in list, plus whatever a live
+   * Google search has turned up in either tab.
+   *
+   * The Google hits used to exist only in the list. A rider who searched for somewhere to
+   * eat got a column of names and a completely unchanged map -- and since food comes from
+   * Google and nowhere else, the Food row in the map key was describing a pin that could
+   * not occur. Deduped against the baked-in list by Google id, because a place that is in
+   * both is one place.
+   */
+  function mapPlaces() {
+    const known = new Set((D.places || []).map(c => c.google_id).filter(Boolean));
+    const live = new Map();
+    ['googleResults', 'browseGoogle'].forEach(key => {
+      (state[key] || []).forEach(g => {
+        if (!g || g.lat == null || known.has(g.google_id) || live.has(g.google_id)) return;
+        live.set(g.google_id, g);
+      });
+    });
+    return [...(D.places || []), ...live.values()];
+  }
+
   function drawMarkers() {
     layers.stops.clearLayers();
     if (layers.spider) layers.spider.clearLayers();
     const pins = [];
 
-    (D.places || []).forEach(c => {
+    mapPlaces().forEach(c => {
       if (!state.mapShow[placeKind(c)]) return;
       const label = [c.name,
                      c.mp != null ? `MP ${c.mp.toFixed(1)}` : null,

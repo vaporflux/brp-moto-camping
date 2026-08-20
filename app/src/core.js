@@ -128,9 +128,14 @@ const BRP = (() => {
       id: rec.id || `place-${rec.lat.toFixed(4)},${rec.lon.toFixed(4)}`,
       mp: rec.mp != null ? rec.mp : near.mp,
       lat: rec.lat, lon: rec.lon,
-      kind: rec.kind === 'hotel' ? 'town' : 'campground',
+      // Everything that was not a hotel used to land here as a campground, which is how a
+      // diner ended up in the trip as a campsite -- and, worse, exported to the GPS with a
+      // tent symbol on it.
+      kind: rec.kind === 'hotel' ? 'town' : rec.kind === 'food' ? 'food' : 'campground',
       name: rec.name,
-      label: rec.price || rec.address || (rec.kind === 'hotel' ? 'Lodging' : 'Campground'),
+      label: rec.price || rec.address
+             || (rec.kind === 'hotel' ? 'Lodging'
+                 : rec.kind === 'food' ? 'Somewhere to eat' : 'Campground'),
       comment: `MP ${(rec.mp != null ? rec.mp : near.mp).toFixed(1)} - ${rec.price || rec.name}`,
       offParkwayMi: rec.off_parkway_mi != null ? rec.off_parkway_mi
                                               : Math.round(near.distance * 100) / 100,

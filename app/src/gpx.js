@@ -17,6 +17,7 @@ const Gpx = (() => {
 
   const SYMBOLS = {
     fuel: 'Gas Station', campground: 'Campground', town: 'City (Small)',
+    food: 'Restaurant',
     start: 'Flag, Green', end: 'Flag, Red', pin: 'Flag, Blue'
   };
 

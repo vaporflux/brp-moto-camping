@@ -83,7 +83,34 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   await p.waitForTimeout(1800);
   const straight = await read();
 
-  console.log(JSON.stringify({ base, early, slow, straight, errors }));
+  // A meal is not a night, and not a campsite. This is the bug as reported: a restaurant
+  // picked from the Google search was added to the trip as lodging, offered "Stay here",
+  // and would have reached the GPS wearing a tent.
+  await p.evaluate(() => {
+    const st = JSON.parse(localStorage.getItem('brp-trip-v2'));
+    st.parkwayMph = 40; st.startTime = '09:00';
+    const camp = st.stops[0];
+    st.stops = [
+      { id: 'google-x', name: 'Smokehouse BBQ', mp: 60.0, lat: 37.55, lon: -79.45,
+        kind: 'food', label: 'Somewhere to eat', dayBreakAfter: true },
+      { ...camp, dayBreakAfter: true },
+    ];
+    localStorage.setItem('brp-trip-v2', JSON.stringify(st));
+  });
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForTimeout(2000);
+  const meal = await p.evaluate(() => {
+    const rows = [...document.querySelectorAll('#pane-plan .stop')];
+    const n = rows.find(r => /Smokehouse BBQ/.test(r.textContent));
+    return n ? { text: n.textContent.replace(/\s+/g, ' ').trim(),
+                 colour: getComputedStyle(n.querySelector('.s-name')).color,
+                 // the colour the food glyph is drawn in, read from the same CSS var
+                 want: getComputedStyle(document.documentElement)
+                         .getPropertyValue('--food').trim() }
+             : null;
+  });
+
+  console.log(JSON.stringify({ base, early, slow, straight, meal, errors }));
   await b.close();
 })();
 """
@@ -201,6 +228,23 @@ def main():
     fuel_rows = [r for r in base["rows"] if "Fuel —" in r or "Top off —" in r]
     check("the fuel stop is on the clock like everything else",
           fuel_rows and all(TIME.search(r) for r in fuel_rows), str(fuel_rows)[:120])
+
+    print("\na meal is a meal, not a night and not a campsite")
+    meal = js["meal"]
+    check("a food stop appears in the itinerary", meal is not None, str(meal))
+    if meal:
+        check("and says to eat, not to camp or stay",
+              "Eat here" in meal["text"]
+              and "Camp here" not in meal["text"] and "Overnight" not in meal["text"],
+              meal["text"][:110])
+        # The itinerary and the map must not be two different keys for one trip.
+        want = tuple(int(meal["want"].lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+        got = tuple(int(x) for x in re.findall(r"\d+", meal["colour"])[:3])
+        check("in the same purple the food glyph is drawn in", got == want,
+              f"{got} vs {want}")
+        # A day break on a lunch stop is the rider's data, not an instruction to sleep.
+        check("and does not roll the clock to the next morning",
+              "(day" not in meal["text"], meal["text"][-60:])
 
     check("the page raised no errors", not js["errors"], str(js["errors"][:3]))
 

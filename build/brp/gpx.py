@@ -38,6 +38,7 @@ SYMBOLS = {
     "fuel": "Gas Station",
     "campground": "Campground",
     "town": "City (Small)",
+    "food": "Restaurant",
     "start": "Flag, Green",
     "end": "Flag, Red",
 }

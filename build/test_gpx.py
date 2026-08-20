@@ -138,6 +138,17 @@ def main():
     check("filenames are ASCII and short",
           len(gpx.filename("BRP", 3, "Asheville-Boone")) <= 40)
 
+    # Every stop kind the app can add must have a symbol of its own. A restaurant used to
+    # fall through to "campground" on the way into the trip, so it reached the GPS wearing
+    # a tent -- a rider scrolling waypoints on a 5-inch screen at a petrol station has
+    # nothing but that symbol to go on.
+    for kind, want in (("fuel", "Gas Station"), ("campground", "Campground"),
+                       ("town", "City (Small)"), ("food", "Restaurant")):
+        check(f"a {kind} stop exports as '{want}'", gpx.SYMBOLS.get(kind) == want,
+              str(gpx.SYMBOLS.get(kind)))
+    check("no stop kind falls back to the generic blue flag",
+          all(k in gpx.SYMBOLS for k in ("fuel", "campground", "town", "food")))
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {FAILURES}")
