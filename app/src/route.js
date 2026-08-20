@@ -554,25 +554,34 @@ const Access = (() => {
     let at = 0, remaining = planningRange;
     const stops = [], notes = [];
 
-    /* Top off before the Parkway starts counting.
+    /* Top off before you join, not after.
      *
-     * Everything below is exact arithmetic on a known tank. The one number it was never
-     * given is how much fuel the rider actually arrives with -- it assumed a full one at
-     * the access point, true if they happened to fill up on the way in and wrong every
-     * other time. So instead of assuming a full tank, the plan MAKES one: the first usable
-     * pump after joining becomes a top-off stop and the calculation starts there.
+     * The first version of this put the top-off at the first usable pump PAST the access
+     * point, which reads sensibly and is the wrong side of the only line that matters. The
+     * Parkway sells no fuel anywhere along its 469 miles; the roads leading to it are lined
+     * with it. So the cheap, easy, no-detour tank is the one taken on the ride in, and a
+     * top-off on the Parkway is by definition a detour off it -- five miles down a mountain
+     * road and five back, for fuel the rider could have had twenty minutes earlier.
      *
-     * Deliberately the first pump, not the furthest reachable. Greedy is the right rule
-     * once the tank is known; it is the wrong rule when it is not. */
-    let topOffStop = null;
-    if (topOff && marks.length) {
-      const first = marks[0];
-      // arriveWithMi is null on purpose: what is in the tank here is the one thing nobody
-      // has told us, and inventing it is what this stop exists to stop doing.
-      topOffStop = { ...first, topOff: true, arriveWithMi: null, arriveTankMi: null };
-      stops.push(topOffStop);
-      at = first.pos;
-      remaining = planningRange - first.detourMi;
+     * It is an instruction now rather than a stop: fill up before MP X. That still answers
+     * what the top-off was added for -- the plan no longer SILENTLY assumes a full tank at
+     * the access point, it says out loud that you need one -- and leaves the greedy loop
+     * below starting exactly where it always did.
+     */
+    let topOffInfo = null;
+    if (topOff) {
+      const near = exitReserve(waypoints[0], component, maxDetourMi);
+      topOffInfo = {
+        accessMp: waypoints[0],
+        nearestMi: near.mi,
+        // Named only as a fallback for a rider who arrives low. This dataset maps fuel at
+        // Parkway exits and nothing else, so it cannot see the stations on the approach --
+        // and there are always more of those.
+        nearest: near.stop
+          ? { mp: near.stop.mp, town: near.stop.town, road: near.stop.exit_road || near.stop.road,
+              detourMi: near.stop.detour_plan_mi || near.stop.detourMi || 0 }
+          : null,
+      };
     }
 
     let guard = 0;
@@ -617,11 +626,18 @@ const Access = (() => {
       tankAt.push({ mp: wp, tankMi: Math.round((cur - (wpos - cursor) + buffer) * 10) / 10 });
     });
 
-    if (topOffStop) {
-      const where = topOffStop.town || topOffStop.road || 'the first pump';
-      notes.push(`Fill up at ${where} (MP ${topOffStop.mp}), ${topOffStop.pos.toFixed(0)} mi `
-               + `after you join. Everything after that is planned from a full tank; this is `
-               + `the one stretch that depends on what you arrive with.`);
+    if (topOffInfo) {
+      let msg = `Top off before you join at MP ${waypoints[0]}. There is no fuel on the `
+              + `Parkway at all, and the roads in are full of it — everything below is `
+              + `planned from a full tank at that point.`;
+      if (topOffInfo.nearest) {
+        const n = topOffInfo.nearest;
+        msg += ` If you arrive low, the nearest pump this planner maps is `
+             + `${n.town || n.road} (MP ${n.mp}), about ${topOffInfo.nearestMi.toFixed(0)} mi `
+             + `off — but it only knows Parkway exits, so you will pass better options on `
+             + `the way in.`;
+      }
+      notes.push(msg);
     }
 
     if (exit.mi != null && exit.stop) {
@@ -631,11 +647,7 @@ const Access = (() => {
     }
 
     return { ok: true, stops, notes, tankAt,
-             topOff: topOffStop
-               ? { mp: topOffStop.mp, town: topOffStop.town, road: topOffStop.road,
-                   intoRideMi: Math.round(topOffStop.pos * 10) / 10,
-                   detourMi: topOffStop.detourMi }
-               : null,
+             topOff: topOffInfo,
              // Where each waypoint falls along the journey line. The itinerary needs this
              // to place a fuel stop on the correct LEG: a round trip passes the same
              // milepost twice, and a stop at mile 378 of a 556 mile ride is on the way

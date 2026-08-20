@@ -49,7 +49,8 @@ const { chromium } = require('playwright');
       const r = Access.planJourney({ maxDetourMi: 8, ...spec });
       return { label: spec.label, ok: r.ok,
                error: r.error || null,
-               topOff: r.topOff ? [r.topOff.mp, r.topOff.intoRideMi] : null,
+               topOff: r.topOff ? [r.topOff.accessMp, r.topOff.nearestMi,
+                                   r.topOff.nearest ? r.topOff.nearest.mp : null] : null,
                stops: (r.stops || []).map(x => [x.mp, Math.round(x.pos * 100) / 100,
                                                 x.arriveTankMi, !!x.topOff]),
                tankAt: (r.tankAt || []).map(t => [t.mp, t.tankMi]),
@@ -204,7 +205,8 @@ def main():
         check(f"{label}: plan succeeds the same way", jsplan["ok"], py["ok"])
         check(f"{label}: same top-off",
               jsplan["topOff"],
-              ([py["top_off"]["mp"], py["top_off"]["into_ride_mi"]]
+              ([py["top_off"]["access_mp"], py["top_off"]["nearest_mi"],
+                py["top_off"]["nearest"]["mp"] if py["top_off"]["nearest"] else None]
                if py.get("top_off") else None))
         check(f"{label}: same stops, in the same places, arriving with the same fuel",
               jsplan["stops"],

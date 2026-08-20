@@ -1248,37 +1248,34 @@
     const THIN_MI = 20;
     const thin = f.ok && !f.stops.length && f.arriveWithMi < THIN_MI;
     const summary = el('div', `alert ${thin ? 'warn' : 'ok'}`);
+    // "Top off before MP X" leads, because it is the one fuel instruction the rider acts
+    // on before the ride starts, and it applies whether or not the Parkway itself needs a
+    // stop. It used to be attached only to the branch that HAD stops, so the commonest
+    // case -- a tank that covers the whole run -- said nothing about filling up at all.
+    const fill = (f.ok && f.topOff) ? `Top off before MP ${f.topOff.accessMp}. ` : '';
     let fuelLine;
     if (!f.ok) fuelLine = '';
     else if (f.stops.length) {
       // "2 fuel stops on the way" is technically true of a round trip and reads as two
       // stops on the outbound leg. Split it, so the count matches what the list shows.
       const lastStay = (f.waypointPos || [])[state.stops.length];
-      // The top-off is counted separately. It is not a stop the tank forced -- it is the
-      // stop that makes the rest of the arithmetic true, and lumping it in inflates the
-      // count a rider uses to judge how broken up their day is.
-      const forced = f.stops.filter(x => !x.topOff);
       const home = lastStay == null ? 0
-        : forced.filter(x => x.pos > lastStay + 1e-6).length;
-      const out = forced.length - home;
-      const fill = f.topOff
-        ? `Top off at ${f.topOff.town || f.topOff.road} (MP ${f.topOff.mp})`
-          + (f.topOff.intoRideMi >= 0.5 ? `, ${Math.round(f.topOff.intoRideMi)} mi in` : ``)
-          + `. `
-        : ``;
+        : f.stops.filter(x => x.pos > lastStay + 1e-6).length;
+      const out = f.stops.length - home;
       fuelLine = fill + (
-        !forced.length ? `No further fuel stop needed.`
-        : home && out
-        ? `Then ${forced.length} fuel stops — ${out} on the way out, ${home} on the way home.`
+        home && out
+        ? `Then ${f.stops.length} fuel stops — ${out} on the way out, ${home} on the way home.`
         : home
         ? `Then ${home} fuel stop${home > 1 ? 's' : ''} on the way home.`
         : `Then ${out} fuel stop${out > 1 ? 's' : ''} on the way.`);
     } else if (thin) {
-      fuelLine = `It fits on one tank, but only just — you arrive with about `
-               + `${f.arriveWithMi} mi left. Fill up before MP ${c.mp}, or raise how far `
-               + `you will ride off the Parkway for fuel.`;
+      fuelLine = fill
+               + `After that it fits on one tank, but only just — you arrive with about `
+               + `${f.arriveWithMi} mi left. Raise how far you will ride off the Parkway `
+               + `for fuel, or shorten the day.`;
     } else {
-      fuelLine = `No fuel stop needed — you arrive with about ${f.arriveWithMi} mi to spare.`;
+      fuelLine = fill
+               + `Nothing else needed — you arrive with about ${f.arriveWithMi} mi to spare.`;
     }
     const rideOut = trip.exitPoint ? trip.exitPoint.rideOutMi : 0;
     // Riding time, not elapsed time: overnights and lunch are the rider's own. At 40 mph a
@@ -1340,6 +1337,26 @@
     // this stop on the Parkway at all. Say which entrance, and how much it would have
     // saved, so the rider can weigh moving the stop instead of just distrusting the plan.
     const sev = c.severedAlternative;
+    /* Fill up before you join.
+     *
+     * order -1 puts it above "Get on the Parkway" at the same position, which is the whole
+     * point: the Parkway has no fuel on it and the road in is covered with it, so the tank
+     * is taken care of on the approach and never as a detour off the ride.
+     *
+     * It costs no time of its own -- it happens during the ride in, which is already on the
+     * clock -- so it carries no offMi and no dwell.
+     */
+    if (f.ok && f.topOff) {
+      const n = f.topOff.nearest;
+      events.push({ pos: wpos ? wpos[0] : 0, order: -1, row: () => stepRow(
+        'FUEL', 'Top off before you get on',
+        `No fuel anywhere on the Parkway — fill up on the way in, before MP `
+        + `${f.topOff.accessMp}`
+        + (n ? ` \u00b7 if you arrive low, nearest mapped pump is ${n.town || n.road} `
+             + `(MP ${n.mp}), about ${Math.round(f.topOff.nearestMi)} mi off` : ''),
+        'fuel') });
+    }
+
     const onParkway = { pos: wpos ? wpos[0] : 0, order: 0, offMi: c.approachMi || 0 };
     onParkway.row = () => stepRow(
       `MP ${c.mp}`, `Get on the Parkway — ${c.name}`,
@@ -1432,6 +1449,9 @@
      */
     let clock = startMinutes(), lastPos = 0;
     events.forEach(ev => {
+      // The top-off happens during the ride in, which the "get on the Parkway" row already
+      // charges for. Giving it a row of its own must not give it a duration of its own.
+      if (ev.order === -1) { ev.legHours = 0; ev.atMin = clock; return; }
       const legHours = hoursFor(Math.max(0, ev.pos - lastPos), ev.offMi || 0);
       ev.legHours = legHours;
       clock += legHours * 60;

@@ -195,6 +195,7 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
     15-mile detour therefore costs 30 miles of range. That asymmetry is what makes MP 411.8
     Wagon Road Gap a trap rather than a convenience.
     """
+    top_off_wanted = top_off
     if tank_mi <= 0:
         return {"ok": False, "stops": [], "notes": [], "error": "Set a tank range first."}
     if len(waypoints) < 2:
@@ -253,32 +254,36 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
     remaining = planning_range if start_tank_mi is None else min(start_tank_mi, planning_range)
     stops, notes = [], []
 
-    # Top off before the Parkway starts counting.
+    # Top off before you join, not after.
     #
-    # Everything below this line is exact arithmetic on a known tank. The one number it was
-    # never given is how much fuel the rider actually arrives with -- it assumed a full one
-    # at the access point, which is true if they happened to fill up on the way in and
-    # wrong every other time. A plan that is precise about miles and guessing about its own
-    # starting point is the worst of both.
+    # The first version of this put the top-off at the first usable pump PAST the access
+    # point, which reads sensibly and is the wrong side of the only line that matters. The
+    # Parkway sells no fuel anywhere along its 469 miles; the roads leading to it are lined
+    # with it. So the cheap, easy, no-detour tank is the one taken on the ride in, and a
+    # top-off on the Parkway is by definition a detour off it -- 5 miles down a mountain
+    # road and 5 miles back, to buy fuel the rider could have had for free twenty minutes
+    # earlier.
     #
-    # So instead of assuming a full tank, the plan MAKES one: the first usable pump the
-    # rider passes after joining becomes a top-off stop, and the calculation starts there.
-    # The only stretch left unplanned is entry to that pump, which is a short, stated
-    # number a rider can check against their own gauge.
+    # So this is now an instruction rather than a stop: fill up before MP X. That still
+    # answers the objection the top-off was added for -- the plan no longer SILENTLY
+    # assumes a full tank at the access point, it says out loud that you need one -- while
+    # leaving the greedy calculation below to start exactly where it always did.
     #
-    # It is deliberately the first pump rather than the best one. Furthest-reachable is the
-    # right rule once the tank is known; it is the wrong rule when it is not.
-    top_off_stop = None
-    if top_off and marks:
-        first = marks[0]
-        top_off_stop = {**first, "top_off": True,
-                        # Unknown on purpose: nobody has told us what is in the tank when
-                        # the rider rolls up here, and inventing a number is what this
-                        # whole stop exists to stop doing.
-                        "arrive_with_mi": None, "arrive_tank_mi": None}
-        stops.append(top_off_stop)
-        at = first["pos"]
-        remaining = planning_range - first["detour_mi"]
+    # The nearest mapped pump is named only as a fallback for a rider who reaches the
+    # Parkway already low. It is not the recommendation, and the note says so: this dataset
+    # maps fuel at Parkway exits and nothing else, so it cannot see the filling stations on
+    # the approach, and there are always more of those.
+    top_off = None
+    if top_off_wanted:
+        near_mi, near_stop = exit_reserve_mi(fuel, waypoints[0], component, max_detour_mi)
+        top_off = {
+            "access_mp": waypoints[0],
+            "nearest_mi": near_mi,
+            "nearest": ({"mp": near_stop["mp"], "town": near_stop.get("town"),
+                         "road": near_stop.get("exit_road"),
+                         "detour_mi": near_stop.get("detour_plan_mi") or 0.0}
+                        if near_stop else None),
+        }
 
     guard = 0
     while target_pos - at > remaining:
@@ -317,8 +322,8 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
     tank_at = []
     cur, cursor, queue = (planning_range if start_tank_mi is None
                           else min(start_tank_mi, planning_range)), 0.0, list(stops)
-    # The top-off stop is in `stops`, so the walk below picks it up like any other and the
-    # tank at every waypoint is measured from a tank we filled rather than one we assumed.
+    # The tank starts full at the access point because the plan told the rider to fill up
+    # before they got there, which is a thing they can actually do.
     for wp, wpos in zip(waypoints, waypoint_pos):
         while queue and queue[0]["pos"] <= wpos + 1e-9:
             st = queue.pop(0)
@@ -326,12 +331,17 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
             cursor = st["pos"]
         tank_at.append({"mp": wp, "tank_mi": round(cur - (wpos - cursor) + buffer_mi, 1)})
 
-    if top_off_stop is not None:
-        where = top_off_stop.get("town") or top_off_stop.get("road") or "the first pump"
-        notes.append(f"Fill up at {where} (MP {_mp(top_off_stop['mp'])}), "
-                     f"{top_off_stop['pos']:.0f} mi after you join. Everything after that "
-                     f"is planned from a full tank; this is the one stretch that depends on "
-                     f"what you arrive with.")
+    if top_off is not None:
+        msg = (f"Top off before you join at MP {_mp(waypoints[0])}. There is no fuel on the "
+               f"Parkway at all, and the roads in are full of it — everything below is "
+               f"planned from a full tank at that point.")
+        if top_off["nearest"]:
+            n = top_off["nearest"]
+            msg += (f" If you arrive low, the nearest pump this planner maps is "
+                    f"{n['town'] or n['road']} (MP {_mp(n['mp'])}), about "
+                    f"{top_off['nearest_mi']:.0f} mi off — but it only knows Parkway exits, "
+                    f"so you will pass better options on the way in.")
+        notes.append(msg)
 
     if exit_mi is not None and exit_stop is not None:
         notes.append(f"Nearest fuel to where you leave the Parkway is "
@@ -340,11 +350,7 @@ def plan_journey(fuel, waypoints, tank_mi, approach_leg_mi=0.0, reserve_frac=0.0
 
     return {
         "ok": True, "stops": stops, "notes": notes,
-        "top_off": ({"mp": top_off_stop["mp"], "town": top_off_stop.get("town"),
-                     "road": top_off_stop.get("road"),
-                     "into_ride_mi": round(top_off_stop["pos"], 1),
-                     "detour_mi": top_off_stop["detour_mi"]}
-                    if top_off_stop else None),
+        "top_off": top_off,
         "exit_reserve_mi": exit_mi,
         "exit_reserve_stop": ({"mp": exit_stop["mp"], "town": exit_stop.get("town")}
                               if exit_stop else None),

@@ -87,9 +87,9 @@ def main():
     except ValueError:
         check("a destination inside a closure is rejected", True)
 
-    # Every plan now opens with a top-off at the first pump past the access point, so the
-    # tank the rest of the arithmetic runs on is one we filled rather than one we assumed.
-    # Counting "stops the tank forced" means counting the ones after it.
+    # The top-off is an instruction given before the rider joins, not a stop on the
+    # Parkway, so every entry in `stops` is a stop the tank forced. This helper stays as a
+    # guard: if a top-off ever leaks back into the stop list, these counts catch it.
     def forced(plan):
         return [x for x in plan["stops"] if not x.get("top_off")]
 
@@ -101,10 +101,15 @@ def main():
     check("a smaller tank never needs fewer stops", counts == sorted(counts), str(counts))
     check("a 300 mi tank needs no stop beyond the top-off on an 87 mi run", counts[0] == 0)
     check("an 80 mi tank does need stops", counts[-1] >= 1)
-    check("every plan opens by filling the tank rather than assuming one",
-          all(r["stops"] and r["stops"][0].get("top_off") for r in runs.values()))
-    check("and the top-off is the first pump passed, not the furthest reachable",
-          all(r["stops"][0]["pos"] == min(x["pos"] for x in r["stops"])
+    check("every plan tells the rider to fill up before joining",
+          all(r.get("top_off") for r in runs.values()))
+    check("and it is pinned to the access point, not to a pump on the Parkway",
+          all(r["top_off"]["access_mp"] == 382.5 for r in runs.values()),
+          str([r["top_off"]["access_mp"] for r in runs.values()]))
+    check("it is not a stop, so it costs no detour and no Parkway miles",
+          all(not any(x.get("top_off") for x in r["stops"]) for r in runs.values()))
+    check("the advice says there is no fuel on the Parkway",
+          all(any("no fuel on the Parkway" in n for n in r["notes"])
               for r in runs.values()))
     # No abstract safety percentage by default: "miles on a tank" is already a rider's
     # conservative real-world figure, and the exit-fuel rule below provides a concrete
@@ -235,12 +240,8 @@ def main():
     bare = A.plan_journey(fuel, wp, tank_mi=200, max_detour_mi=8, component=0)
     # Not pinned to an exact figure: the fuel set grows as verification runs, and the
     # claim is about the shape of greedy planning, not about one number.
-    # The top-off carries no arrival figure at all -- what is in the tank when the rider
-    # rolls up to it is the one thing nobody has told us, and inventing a number there is
-    # what the top-off exists to stop doing.
-    check("the top-off does not claim to know what you arrive with",
-          bare["stops"][0].get("top_off")
-          and bare["stops"][0]["arrive_tank_mi"] is None)
+    check("the top-off is advice, not an entry in the stop list",
+          bare.get("top_off") and not any(x.get("top_off") for x in bare["stops"]))
     check("with no buffer, a stop is reached on less than the default 10 mi",
           min(s["arrive_tank_mi"] for s in forced(bare)) < 10,
           str(min(s["arrive_tank_mi"] for s in forced(bare))))
@@ -284,11 +285,8 @@ def main():
     camp_pos = rt["waypoint_pos"][1]
     outbound = [s for s in rt["stops"] if s["pos"] <= camp_pos]
     homeward = [s for s in rt["stops"] if s["pos"] > camp_pos]
-    check("the top-off and one fuel stop are on the way out", len(outbound) == 2,
-          str([round(x["pos"], 1) for x in outbound]))
-    check("the top-off is the first of them", outbound[0].get("top_off"))
+    check("one fuel stop is on the way out", len(outbound) == 1, str(len(outbound)))
     check("and one is on the way home", len(homeward) == 1, str(len(homeward)))
-    outbound = [x for x in outbound if not x.get("top_off")]
     # Same milepost region, 193 miles apart in riding. Ordering by milepost would put them
     # side by side; ordering by journey position keeps them where they happen.
     check("they are far apart in riding, not in milepost",
@@ -302,27 +300,23 @@ def main():
     # Greedy is the right rule once the tank is a known quantity, which is true from the
     # top-off onward and not before it. So the claim is about the leg AFTER the top-off:
     # from there, on a full tank, nothing reachable should have been ridden past.
-    forced_stops = [x for x in plan["stops"] if not x.get("top_off")]
-    if plan["ok"] and forced_stops and plan["stops"][0].get("top_off"):
-        start = plan["stops"][0]
-        first = forced_stops[0]
-        range_from_start = plan["planning_range_mi"] - start["detour_mi"]
+    if plan["ok"] and plan["stops"]:
+        first = plan["stops"][0]
         skipped = [f for f in fuel
                    if A._usable(f, 8) and f.get("component") == 0
                    and first["mp"] < f["mp"] <= 200.0
-                   and (f["mp"] - start["mp"]) + (f.get("detour_plan_mi") or 0)
-                       <= range_from_start]
-        check("no reachable pump was passed by on the leg after the top-off", not skipped,
+                   and (f["mp"] - 0.0) + (f.get("detour_plan_mi") or 0)
+                       <= plan["planning_range_mi"]]
+        check("no reachable pump was passed by on the first leg", not skipped,
               str([f["mp"] for f in skipped]))
-    check("the top-off is the nearest pump, not the furthest reachable",
-          plan["stops"][0].get("top_off")
-          and plan["stops"][0]["pos"] == min(x["pos"] for x in plan["stops"]),
-          str([round(x["pos"], 1) for x in plan["stops"][:3]]))
-    # Turning it off restores the old assume-a-full-tank behaviour, which is what the
-    # exported GPX and any caller that wants raw greedy still get.
+    # The named fallback is for a rider who reaches the Parkway low anyway. It is the
+    # nearest mapped pump to the access point, measured the way exit fuel is.
+    check("the fallback pump is the nearest one to where you join",
+          plan["top_off"]["nearest_mi"]
+          == A.exit_reserve_mi(fuel, 0.0, 0, 8)[0],
+          str(plan["top_off"]))
     without = A.plan_fuel(fuel, 0.0, 200.0, 90, component=0, max_detour_mi=8, top_off=False)
-    check("it can be switched off", without["ok"] and not without.get("top_off")
-          and not any(x.get("top_off") for x in without["stops"]))
+    check("it can be switched off", without["ok"] and not without.get("top_off"))
 
     print()
     if FAILURES:

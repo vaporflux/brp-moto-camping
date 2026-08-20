@@ -110,7 +110,29 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
              : null;
   });
 
-  console.log(JSON.stringify({ base, early, slow, straight, meal, errors }));
+  // A tank small enough that the Parkway itself forces a stop, so there is a real fuel row
+  // to put on the clock. The default trip fits on one tank, which is the commonest case
+  // and tells us nothing about how a pump is timed.
+  await plant({ startTime: '09:00', parkwayMph: 40, tankMi: 90 });
+  await p.waitForTimeout(1800);
+  const thirsty = await read();
+
+  await plant({ startTime: '09:00', parkwayMph: 40, tankMi: 200 });
+  await p.waitForTimeout(1800);
+
+  // The top-off is an instruction for the ride IN, so it has to appear above the row that
+  // joins the Parkway. Putting it after was the bug: the Parkway sells no fuel, so a
+  // top-off on it is by definition a detour off it, for fuel the rider passed on the way.
+  const topOff = await p.evaluate(() => {
+    const rows = [...document.querySelectorAll('#pane-plan .stop')]
+      .map(n => n.textContent.replace(/\s+/g, ' ').trim());
+    return { rows,
+             topOffAt: rows.findIndex(r => /Top off/i.test(r)),
+             joinAt: rows.findIndex(r => /Get on the Parkway/.test(r)),
+             summary: (document.querySelector('#pane-plan .alert') || {}).textContent || '' };
+  });
+
+  console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff, errors }));
   await b.close();
 })();
 """
@@ -171,9 +193,13 @@ def main():
 
     print("every step says when you get there")
     check("the itinerary has steps at all", len(base["rows"]) >= 4, str(len(base["rows"])))
-    check("every step carries a time",
-          all(TIME.search(r) or LEAVE.search(r) for r in base["rows"]),
-          str([r[:40] for r in base["rows"] if not (TIME.search(r) or LEAVE.search(r))]))
+    # The top-off is the one exemption, and deliberately: it happens during the ride in,
+    # which the "get on the Parkway" row already puts on the clock. Giving it a row of its
+    # own must not give it a duration of its own.
+    timed = [r for r in base["rows"] if not re.search(r"Top off", r)]
+    check("every step carries a time, bar the top-off",
+          all(TIME.search(r) or LEAVE.search(r) for r in timed),
+          str([r[:40] for r in timed if not (TIME.search(r) or LEAVE.search(r))]))
     check("the ride starts when the rider said",
           bool(LEAVE.search(base["rows"][0])) and minutes(LEAVE.search(base["rows"][0])) == 9 * 60,
           base["rows"][0][:60])
@@ -199,9 +225,11 @@ def main():
     fast, halved = parkway_leg(base), parkway_leg(slow)
     check("halving the speed doubles the Parkway leg",
           fast and halved and abs(halved - 2 * fast) <= 2, f"{fast} min -> {halved} min")
+    def join_row(run):
+        return next(r for r in run["rows"] if "Get on the Parkway" in r)
     check("but the ride in is unchanged, being off the Parkway",
-          RIDING.search(base["rows"][1]).group(0) == RIDING.search(slow["rows"][1]).group(0),
-          f"{RIDING.search(base['rows'][1]).group(0)} vs {RIDING.search(slow['rows'][1]).group(0)}")
+          RIDING.search(join_row(base)).group(0) == RIDING.search(join_row(slow)).group(0),
+          f"{RIDING.search(join_row(base)).group(0)} vs {RIDING.search(join_row(slow)).group(0)}")
     check("the summary states the moving time and the speed it assumed",
           "40 mph" in base["summary"] and "moving at" in base["summary"],
           base["summary"][:120])
@@ -225,9 +253,32 @@ def main():
           str(times(straight)))
 
     print("\nstanding at a pump takes time too")
-    fuel_rows = [r for r in base["rows"] if "Fuel —" in r or "Top off —" in r]
-    check("the fuel stop is on the clock like everything else",
-          fuel_rows and all(TIME.search(r) for r in fuel_rows), str(fuel_rows)[:120])
+    thirsty = js["thirsty"]
+    fuel_rows = [r for r in thirsty["rows"] if "Fuel —" in r]
+    check("a small tank forces a fuel stop on the Parkway", bool(fuel_rows),
+          str([r[:40] for r in thirsty["rows"]]))
+    check("and it is on the clock like everything else",
+          all(TIME.search(r) for r in fuel_rows), str(fuel_rows)[:140])
+    # Ten minutes off the bike. Without it every arrival after the first pump is early.
+    if fuel_rows:
+        after = [minutes(m) for m in (TIME.search(r) for r in thirsty["rows"]) if m]
+        check("time still only moves forward once a pump is in the way",
+              after == sorted(after), str(after))
+
+    print("\nyou fill up before you join, not after")
+    t = js["topOff"]
+    check("the plan says to top off", t["topOffAt"] >= 0,
+          str([r[:40] for r in t["rows"]]))
+    check("and says it before you get on the Parkway",
+          t["topOffAt"] >= 0 and t["joinAt"] >= 0 and t["topOffAt"] < t["joinAt"],
+          f"top off at row {t['topOffAt']}, joins at row {t['joinAt']}")
+    check("it explains why -- there is no fuel on the Parkway",
+          "No fuel anywhere on the Parkway" in t["rows"][t["topOffAt"]],
+          t["rows"][t["topOffAt"]][:120])
+    check("it costs no riding time of its own, being part of the ride in",
+          "riding" not in t["rows"][t["topOffAt"]], t["rows"][t["topOffAt"]][-60:])
+    check("and the summary leads with it",
+          "Top off before MP" in t["summary"], t["summary"][:140])
 
     print("\na meal is a meal, not a night and not a campsite")
     meal = js["meal"]
