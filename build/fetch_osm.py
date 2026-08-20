@@ -155,7 +155,10 @@ def main():
             payload = json.load(f)
     else:
         box = bbox(model, args.radius)
-        print(f"Fetching camp sites and lodging within {args.radius} mi of the Parkway…")
+        print(f"Fetching camp sites, lodging and food within {args.radius} mi "
+              f"of the Parkway…")
+        print("  asking Overpass for: tourism=camp_site|caravan_site|hotel|motel|hostel, "
+              "amenity=restaurant|fast_food")
         print(f"  bounding box {box[0]:.3f},{box[1]:.3f} to {box[2]:.3f},{box[3]:.3f}")
         payload = fetch(box, args.timeout)
 

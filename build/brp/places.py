@@ -142,6 +142,20 @@ def build(model, net, curated, osm=None, enrichment=None):
         key = _dedupe_key(p)
         if key in seen:
             continue          # curated wins: it carries research the OSM row does not
+
+        # Food ships only with Google behind it. Unconditionally -- not merely when an
+        # enrichment file happens to exist, which is how the rest of this loop works.
+        #
+        # A campsite or a hotel from OSM alone is still a usable answer: it is a place with
+        # a name and a location, and a rider can ring ahead. A restaurant is not. Half of
+        # them have changed hands, changed hours or closed since anyone touched the tag,
+        # and an unenriched one offers no phone number, no hours and no rating to check
+        # any of that against -- so it is a name on a map that sends somebody hungry down a
+        # side road at eight in the evening. Better to show nothing and let the Google
+        # search answer it live.
+        if p["kind"] == "food" and not ((enrichment or {}).get(p["osm_id"]) or {}).get("match"):
+            continue
+
         g = None
         if enrichment is not None:
             rec = enrichment.get(p["osm_id"])

@@ -147,6 +147,44 @@ def main():
           by_name["Tagged No"]["showers"] is False)
     check("hotels come through as their own kind",
           by_name["Untagged Place"]["kind"] == "hotel")
+
+    # Food is held to a stricter bar than anywhere you sleep.
+    #
+    # A campsite from OSM alone is still a usable answer -- a name, a location, something to
+    # ring ahead about. A restaurant is not: half of them have changed hands, hours or
+    # owners since the tag was touched, and with no phone, no hours and no rating there is
+    # nothing to check that against. An unenriched one is a name on a map that sends
+    # somebody hungry down a side road at eight in the evening.
+    food_osm = {"places": [
+        {"osm_id": "n9", "name": "Unconfirmed Diner", "kind": "food", "lat": 35.53,
+         "lon": -82.53, "mp": 393.0, "off_parkway_mi": 1.0,
+         "showers": None, "toilets": None},
+        {"osm_id": "n10", "name": "Confirmed BBQ", "kind": "food", "lat": 35.54,
+         "lon": -82.54, "mp": 394.0, "off_parkway_mi": 1.0,
+         "showers": None, "toilets": None},
+        {"osm_id": "n11", "name": "Plain Campground", "kind": "campground", "lat": 35.55,
+         "lon": -82.55, "mp": 395.0, "off_parkway_mi": 1.0,
+         "showers": None, "toilets": None},
+    ]}
+    # No enrichment file at all: lodging still ships, food does not.
+    bare = {p["name"] for p in P.build(model, net, curated_raw, food_osm)}
+    check("with no enrichment, an unconfirmed restaurant is dropped",
+          "Unconfirmed Diner" not in bare and "Confirmed BBQ" not in bare, str(bare & {
+              "Unconfirmed Diner", "Confirmed BBQ"}))
+    check("but a campground with no enrichment still ships",
+          "Plain Campground" in bare)
+
+    # With an enrichment file, only the restaurant Google could actually confirm survives.
+    enr = {"n10": {"match": {"google_id": "g10", "google_name": "Confirmed BBQ",
+                             "phone": "(828) 555-0100", "match_distance_mi": 0.01}},
+           "n11": {"match": {"google_id": "g11", "google_name": "Plain Campground",
+                             "match_distance_mi": 0.01}}}
+    enriched = {p["name"]: p for p in P.build(model, net, curated_raw, food_osm, enr)}
+    check("a restaurant Google confirmed does ship", "Confirmed BBQ" in enriched)
+    check("and carries the Google detail that makes it worth showing",
+          enriched.get("Confirmed BBQ", {}).get("phone") == "(828) 555-0100")
+    check("the one Google could not confirm still does not",
+          "Unconfirmed Diner" not in enriched)
     summ = P.summary(merged)
     # 32 curated + the one OSM row tagged yes; one untagged row unknown; one recorded
     # absence; the duplicate never made it in.
