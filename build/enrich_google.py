@@ -40,6 +40,7 @@ import argparse
 import difflib
 import json
 import math
+from collections import Counter
 import os
 import re
 import sys
@@ -256,6 +257,10 @@ def main():
                     help="seconds between requests (default 0.12)")
     ap.add_argument("--redo", action="store_true",
                     help="ignore the checkpoint and look everything up again")
+    ap.add_argument("--kind", help="only look up these kinds, comma separated "
+                                   "(food, campground, hotel). Every request here is "
+                                   "billable, so it should be possible to spend on the "
+                                   "category you actually want.")
     args = ap.parse_args()
 
     key = os.environ.get("GOOGLE_MAPS_API_KEY") or os.environ.get("GOOGLE_PLACES_API_KEY")
@@ -285,12 +290,25 @@ def main():
     if args.limit:
         todo = todo[:args.limit]
 
+    if args.kind:
+        want = {k.strip().lower() for k in args.kind.split(",") if k.strip()}
+        todo = [p for p in todo if (p.get("kind") or "").lower() in want]
+
     print(f"{len(places)} OSM places, {len(done)} already looked up, {len(todo)} to do.")
     if not todo:
         print("Nothing to do. Delete data/google_enrichment.json or pass --redo to start over.")
         return 0
-    print(f"That is {len(todo)} billable Google Text Search requests. "
-          f"Ctrl-C is safe -- progress is saved after every place.\n")
+
+    # Say what the money is being spent ON, not just how much of it there is. "2329
+    # requests" is a number to flinch at; "1800 of them restaurants, which is the thing you
+    # asked for" is a decision. --kind then lets that decision be acted on.
+    by_kind = Counter((p.get("kind") or "other") for p in todo)
+    print(f"That is {len(todo)} billable Google Text Search requests: "
+          + ", ".join(f"{n} {k}" for k, n in by_kind.most_common()) + ".")
+    print("The field mask asks for phone, website, rating and opening hours, which is the "
+          "Enterprise tier -- check the current rate in Cloud Console before a big run.")
+    print("Narrow it with --kind food (or --limit N to try a few first). "
+          "Ctrl-C is safe -- progress is saved after every place.\n")
 
     records = dict(done)
     failures = 0
