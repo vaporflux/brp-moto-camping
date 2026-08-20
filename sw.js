@@ -13,7 +13,19 @@
  * The API routes are never cached: a stale Google answer about whether a campground is
  * open is worse than an honest failure.
  */
-const VERSION = 'brp-v15-version-in-header';
+/* Cache headers for this file live in vercel.json, and they matter more than they look.
+ *
+ * This worker decides which version of the app a phone runs. If a browser is allowed to
+ * serve a CACHED copy of it, a rider stays on old code no matter how many times they
+ * reload, and there is nothing they can do from their end. So /sw.js is no-store, and the
+ * page and manifest revalidate.
+ *
+ * Do not put explanatory keys in vercel.json to say so. JSON has no comments, Vercel
+ * validates the file strictly, and an unknown property fails the BUILD -- which is exactly
+ * what happened when this was first written: every deploy errored for half an hour and the
+ * site silently stayed on the previous version while I told the rider to reload harder.
+ */
+const VERSION = 'brp-v16-fix-deploy';
 const SHELL = `${VERSION}-shell`;
 const TILES = `${VERSION}-tiles`;
 const TILE_LIMIT = 1200;              // ~15-25 MB, enough for a planned corridor

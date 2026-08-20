@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "headers": [
     {
-      "comment": "The service worker decides which version of the app a phone runs. If a browser serves a cached copy of THIS file, a rider stays on old code no matter how many times they reload, and there is nothing they can do about it from their end.",
       "source": "/sw.js",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
@@ -10,7 +9,6 @@
       ]
     },
     {
-      "comment": "The page itself is one big generated file and changes on every deploy. The service worker serves it network-first and falls back to its own cache offline, so revalidating here costs nothing and staleness costs a lot.",
       "source": "/index.html",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
@@ -23,7 +21,6 @@
       ]
     },
     {
-      "comment": "The manifest names the app on the home screen; a stale one survives a reinstall.",
       "source": "/manifest.webmanifest",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, must-revalidate" }

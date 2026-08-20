@@ -72,7 +72,42 @@ def check_js(sources):
     print(f"  {len(sources)} JavaScript files parse")
 
 
+def check_vercel_json():
+    """Refuse to build if the deploy config would be rejected by Vercel.
+
+    Vercel validates vercel.json against a strict schema and an unknown property fails the
+    BUILD, not the request -- so the site keeps serving the previous deploy and nothing on
+    it looks wrong. That is the worst failure shape there is: I added explanatory "comment"
+    keys to the header rules, every deploy errored for half an hour, and the whole time I
+    was telling the rider his phone was caching too aggressively and to reload harder.
+
+    Only the keys Vercel accepts on a headers rule are allowed here. It is a small check
+    because the file is small; the point is that it fails in this terminal instead of
+    silently in a dashboard nobody is watching.
+    """
+    path = os.path.join(ROOT, "vercel.json")
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        cfg = json.load(f)          # a syntax error raises here, which is the point
+    allowed_rule = {"source", "headers", "has", "missing"}
+    for i, rule in enumerate(cfg.get("headers", [])):
+        extra = set(rule) - allowed_rule
+        if extra:
+            raise SystemExit(
+                f"vercel.json headers[{i}] has {sorted(extra)}, which Vercel rejects. "
+                f"Allowed: {sorted(allowed_rule)}. JSON has no comments -- explain it in "
+                f"sw.js instead.")
+        for j, h in enumerate(rule.get("headers", [])):
+            if set(h) != {"key", "value"}:
+                raise SystemExit(
+                    f"vercel.json headers[{i}].headers[{j}] must have exactly key and "
+                    f"value, got {sorted(h)}.")
+    print(f"  vercel.json: {len(cfg.get('headers', []))} header rules, all valid")
+
+
 def main():
+    check_vercel_json()
     data = read(os.path.join(ROOT, "data", "derived", "browser-data.json"))
     # </script> inside a JSON string literal would close the tag early.
     data = data.replace("</", "<\\/")
