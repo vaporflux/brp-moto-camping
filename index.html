@@ -2644,6 +2644,23 @@ const LEGEND_FOOTER =
   ];
 
   /* Everything the finder can show, already deduped and in milepost order. */
+  /* What to say when the list comes back empty.
+   *
+   * One function rather than a copy in each list. The copies were identical, and one of
+   * them read a variable that only existed in the other's scope -- which threw, and a
+   * ReferenceError inside a render takes the whole tab down. Picking Food in the Plan tab
+   * showed a blank page, because Food is simply the easiest way to produce an empty list.
+   */
+  function emptyNote(f) {
+    const noFoodYet = state[f.kind] === 'food'
+                   && !(D.places || []).some(c => c.kind === 'food');
+    return el('div', 'empty', noFoodYet
+      ? 'Food comes from Google rather than the offline list — places to eat change hands '
+      + 'and hours far too often to be worth baking in. Tap the search below and they will '
+      + 'appear here and on the map.'
+      : 'Nothing matches. Loosen a filter, or widen the distance.');
+  }
+
   function finderPool(f) {
     if (state[f.kind] === 'fuel') {
       return D.fuel
@@ -2865,17 +2882,7 @@ const LEGEND_FOOTER =
       count.textContent = `${rows.length} of ${total} places`
         + (D.has_osm ? '' : ' \u00b7 curated list only, run build/fetch_osm.py to widen it');
       if (!rows.length) {
-        // "Nothing matches" is the wrong answer when the reason is that nothing was ever
-        // fetched. Food only entered the OSM pull recently, so a dataset built before that
-        // has no restaurants in it at all, and a rider would read an empty list as "there
-        // is nowhere to eat on the Blue Ridge Parkway".
-        const noFoodYet = state[f.kind] === 'food'
-                       && !(D.places || []).some(c => c.kind === 'food');
-        list.append(el('div', 'empty', noFoodYet
-          ? 'Food comes from Google rather than the offline list — places to eat change '
-          + 'hands and hours far too often to be worth baking in. Tap the search below and '
-          + 'they will appear here and on the map.'
-          : 'Nothing matches. Loosen a filter, or widen the distance.'));
+        list.append(emptyNote(FINDER.plan));
         return;
       }
       rows.slice(0, 300).forEach(c => list.append(finderRow(c)));
@@ -3867,17 +3874,7 @@ const LEGEND_FOOTER =
       count.textContent = `${rows.length} of ${pool} `
         + (state[f.kind] === 'fuel' ? 'fuel exits' : 'places');
       if (!rows.length) {
-        // "Nothing matches" is the wrong answer when the reason is that nothing was ever
-        // fetched. Food only entered the OSM pull recently, so a dataset built before that
-        // has no restaurants in it at all, and a rider would read an empty list as "there
-        // is nowhere to eat on the Blue Ridge Parkway".
-        const noFoodYet = state[f.kind] === 'food'
-                       && !(D.places || []).some(c => c.kind === 'food');
-        list.append(el('div', 'empty', noFoodYet
-          ? 'Food comes from Google rather than the offline list — places to eat change '
-          + 'hands and hours far too often to be worth baking in. Tap the search below and '
-          + 'they will appear here and on the map.'
-          : 'Nothing matches. Loosen a filter, or widen the distance.'));
+        list.append(emptyNote(f));
         return;
       }
       rows.slice(0, 300).forEach(c => list.append(finderRow(c)));

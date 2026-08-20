@@ -164,8 +164,31 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
   await p.waitForTimeout(2200);
   const orderAfter = await snapOrder();
 
+  // An empty result list must not take the tab down with it. Reported from the app: with a
+  // trip already planned, "+ Add another stop" then the Food filter rendered a blank page.
+  // A ReferenceError inside a render kills the whole pane, and Food is simply the easiest
+  // way to produce an empty list -- any filter narrow enough would have done it.
+  const emptyList = await p.evaluate(() => {
+    const size = () => {
+      const n = document.querySelector('#pane-plan');
+      return { chars: n.textContent.replace(/\s+/g, ' ').trim().length,
+               sections: n.querySelectorAll('.section').length,
+               empty: (n.querySelector('.empty') || {}).textContent || '' };
+    };
+    const before = size();
+    const add = [...document.querySelectorAll('#pane-plan button')]
+      .find(b => /Add another stop/.test(b.textContent));
+    if (add) add.click();
+    return new Promise(res => setTimeout(() => {
+      const chip = [...document.querySelectorAll('#pane-plan .chip')]
+        .find(c => c.textContent.trim() === 'Food');
+      if (chip) chip.click();
+      setTimeout(() => res({ before, after: size(), hadChip: !!chip }), 900);
+    }, 600));
+  });
+
   console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff,
-                               orderBefore, orderAfter, errors }));
+                               orderBefore, orderAfter, emptyList, errors }));
   await b.close();
 })();
 """
@@ -359,6 +382,14 @@ def main():
     after_times = [minutes(m) for m in (TIME.search(r) for r in oa["steps"]) if m]
     check("times still only move forward afterwards",
           after_times == sorted(after_times), str(after_times))
+
+    print("\nan empty list does not take the tab with it")
+    e = js["emptyList"]
+    check("the Food filter is offered while adding a stop", e["hadChip"], json.dumps(e))
+    check("the plan tab still renders", e["after"]["sections"] == e["before"]["sections"]
+          and e["after"]["chars"] > 500, json.dumps(e["after"]))
+    check("and says why the list is empty rather than showing nothing",
+          "Food comes from Google" in e["after"]["empty"], e["after"]["empty"][:90])
 
     check("the page raised no errors", not js["errors"], str(js["errors"][:3]))
 
