@@ -1851,13 +1851,18 @@
      * a fact about the road that the rider then has to place themselves. */
     const intoLeg = mp => Math.round(Math.abs(mp - item.from));
 
+    /* A fuel stop and a closure are not steps you ride -- they are things you MEET while
+     * riding the step above. Numbered in line with the turns, "Closure, MP 63.5-63.9" read
+     * as an instruction of its own, on a stretch of road the rider had not been told they
+     * were on. `leg-note` drops them out of the numbering and indents them under the leg
+     * they describe. */
     passing.forEach(f => {
-      const li = el('li');
+      const li = el('li', 'leg-note fuel');
+      li.append(el('b', null, 'Fuel stop,'));
       li.append(document.createTextNode(
-        `Fuel stop, ${intoLeg(f.mp)} mi into this leg — MP ${f.mp}, `
+        ` ${intoLeg(f.mp)} mi into this leg — MP ${f.mp}, `
         + `${[f.road, f.town].filter(Boolean).join(', ')}`
         + `${f.detourMi ? `. Leave the Parkway ${f.detourMi} mi, then back on` : ''}.`));
-      li.style.color = 'var(--warn)';
       ol.append(li);
     });
 
@@ -1867,16 +1872,16 @@
     (D.closures || [])
       .filter(c => c.to_mp > lo + 1e-9 && c.from_mp < hi - 1e-9)
       .forEach(c => {
-        const li = el('li');
+        const li = el('li', 'leg-note closed');
         // "None" arrives as a STRING from the closure feed, so a truthiness test printed
         // "Follow the signed detour: None." on the two stretches that have no detour at all.
         const detour = c.detour && String(c.detour).trim().toLowerCase() !== 'none'
           ? `Follow the signed detour: ${c.detour}.`
           : 'No detour — the Parkway is severed here.';
+        li.append(el('b', null, 'Closure,'));
         li.append(document.createTextNode(
-          `Closure, ${intoLeg(c.from_mp)} mi into this leg — MP ${c.from_mp}\u2013${c.to_mp}, `
+          ` ${intoLeg(c.from_mp)} mi into this leg — MP ${c.from_mp}\u2013${c.to_mp}, `
           + `${c.reason}. ${detour}`));
-        li.style.color = 'var(--danger)';
         ol.append(li);
       });
 

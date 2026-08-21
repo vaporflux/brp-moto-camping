@@ -384,6 +384,21 @@ label.field > span { display: block; font-size: 11px; color: var(--dim); margin-
 .turn-list li { font-size: 12px; line-height: 1.55; padding: 3px 0; color: var(--fg); }
 .turn-dist { color: var(--dim); font-size: 11px; margin-left: 6px; white-space: nowrap; }
 
+/* A fuel stop or a closure happens DURING the leg above it -- it is not a step you ride.
+ * Numbered in line with the turns they read as instructions of their own, about stretches
+ * of road the rider had not been told they were on. `display: block` indents them under
+ * the leg and takes them out of the list counter, so the turns keep counting past them. */
+.turn-list li.leg-note {
+  display: block; margin: 5px 0 5px 2px; padding: 6px 10px;
+  border-left: 3px solid currentColor;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: color-mix(in srgb, currentColor 11%, transparent);
+  font-size: 11.5px; line-height: 1.5;
+}
+.turn-list li.leg-note b { font-weight: 700; }
+.turn-list li.leg-note.fuel { color: var(--warn); }
+.turn-list li.leg-note.closed { color: var(--danger); }
+
 /* The detail card a list row cannot carry. */
 .preview {
   border: 1px solid var(--amber); border-radius: var(--radius); background: var(--panel-2);

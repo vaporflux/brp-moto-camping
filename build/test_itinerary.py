@@ -345,8 +345,25 @@ const TILE = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080200
     const pane = document.querySelector('#pane-plan');
     const sec = [...pane.querySelectorAll('.section')]
       .find(x => (x.querySelector('h2') || {}).textContent === 'Directions');
-    return { cards: sec ? [...sec.children].filter(n => n.tagName !== 'H2')
-               .map(n => n.textContent.replace(/\s+/g, ' ').trim()) : [] };
+    const kids = sec ? [...sec.children].filter(n => n.tagName !== 'H2') : [];
+    // A warning belongs to the leg above it, not to the numbering: it must be indented
+    // and it must not consume a step number the rider is counting off.
+    const card = kids.find(n => (n.textContent || '').includes('27.2')
+                             && (n.textContent || '').includes('85.1'));
+    const items = card ? [...card.querySelectorAll('.turn-list > li')] : [];
+    const notes = items.filter(li => li.classList.contains('leg-note'));
+    const cs = li => getComputedStyle(li);
+    return {
+      cards: kids.map(n => n.textContent.replace(/\s+/g, ' ').trim()),
+      nest: {
+        notes: notes.map(li => li.textContent.replace(/\s+/g, ' ').trim().slice(0, 30)),
+        unnumbered: notes.every(li => cs(li).display !== 'list-item'),
+        indented: notes.every(li => parseFloat(cs(li).borderLeftWidth) > 0
+                                 && parseFloat(cs(li).paddingLeft) > 0),
+        steps: items.filter(li => cs(li).display === 'list-item')
+                 .map(li => li.textContent.replace(/\s+/g, ' ').trim().slice(0, 24)),
+      },
+    };
   });
 
   console.log(JSON.stringify({ base, early, slow, straight, thirsty, meal, topOff,
@@ -645,6 +662,18 @@ def main():
     ride_in = next((c for c in cards if c.startswith("1.")), "")
     check("a leg with no closure on it carries no closure line",
           "Closure," not in ride_in, ride_in[:90])
+    # A rider counts steps off out loud: 1, 2, 3. A closure numbered among them reads as
+    # an instruction, and the leg it describes silently loses its number.
+    nest = js["dirs"]["nest"]
+    check("the leg's warnings are there to nest", len(nest["notes"]) >= 2,
+          json.dumps(nest["notes"]))
+    check("a warning is not numbered as a step of its own", nest["unnumbered"],
+          json.dumps(nest["notes"]))
+    check("it is indented under the leg it describes", nest["indented"],
+          json.dumps(nest["notes"]))
+    check("so the leg's own steps still count 1, 2 with nothing skipped",
+          len(nest["steps"]) == 2 and nest["steps"][0].startswith("Join"),
+          json.dumps(nest["steps"]))
 
     print("\nthe app can say what it is and start over")
     ab = js["about"]
