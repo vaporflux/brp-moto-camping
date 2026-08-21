@@ -1843,22 +1843,42 @@
       ? (f.mp >= lo && f.mp <= hi)                     // no journey line: fall back
       : (f.pos > posFrom - 1e-6 && f.pos < posTo + 1e-6));
     passing.sort((a, b) => a.pos - b.pos);
+    /* Each line says how far into THIS leg it happens.
+     *
+     * A milepost on its own does not tell a rider whether something is on their path --
+     * mileposts run one way, a leg may run the other, and a round trip covers the same
+     * numbers twice. "31 mi into this leg" is checkable against the odometer; "MP 63.5" is
+     * a fact about the road that the rider then has to place themselves. */
+    const intoLeg = mp => Math.round(Math.abs(mp - item.from));
+
     passing.forEach(f => {
       const li = el('li');
       li.append(document.createTextNode(
-        `MP ${f.mp} — leave the Parkway for fuel at ${[f.road, f.town].filter(Boolean).join(', ')}`
-        + `${f.detourMi ? ` (${f.detourMi} mi off, then back on)` : ''}.`));
+        `Fuel stop, ${intoLeg(f.mp)} mi into this leg — MP ${f.mp}, `
+        + `${[f.road, f.town].filter(Boolean).join(', ')}`
+        + `${f.detourMi ? `. Leave the Parkway ${f.detourMi} mi, then back on` : ''}.`));
       li.style.color = 'var(--warn)';
       ol.append(li);
     });
-    (D.closures || []).filter(c => c.to_mp >= lo && c.from_mp <= hi).forEach(c => {
-      const li = el('li');
-      li.append(document.createTextNode(
-        `MP ${c.from_mp}–${c.to_mp} — ${c.reason}. `
-        + (c.detour ? `Follow the signed detour: ${c.detour}.` : 'No detour; the Parkway is severed here.')));
-      li.style.color = 'var(--danger)';
-      ol.append(li);
-    });
+
+    // A closure counts when the rider RIDES THROUGH it, so a range that merely touches the
+    // end of this leg is not one -- and neither is anything on a stretch of Parkway this
+    // leg does not cover.
+    (D.closures || [])
+      .filter(c => c.to_mp > lo + 1e-9 && c.from_mp < hi - 1e-9)
+      .forEach(c => {
+        const li = el('li');
+        // "None" arrives as a STRING from the closure feed, so a truthiness test printed
+        // "Follow the signed detour: None." on the two stretches that have no detour at all.
+        const detour = c.detour && String(c.detour).trim().toLowerCase() !== 'none'
+          ? `Follow the signed detour: ${c.detour}.`
+          : 'No detour — the Parkway is severed here.';
+        li.append(document.createTextNode(
+          `Closure, ${intoLeg(c.from_mp)} mi into this leg — MP ${c.from_mp}\u2013${c.to_mp}, `
+          + `${c.reason}. ${detour}`));
+        li.style.color = 'var(--danger)';
+        ol.append(li);
+      });
 
     const arrive = el('li');
     arrive.append(document.createTextNode(item.isExit

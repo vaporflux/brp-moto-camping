@@ -633,6 +633,18 @@ def main():
           "US 501" in out_leg and "US 60" not in out_leg, out_leg[:150])
     check("and the homeward leg only the one on the way home",
           "US 60" in home_leg and "US 501" not in home_leg, home_leg[:150])
+    # A milepost alone does not tell a rider whether something is on their path: mileposts
+    # run one way, a leg may run the other, and a round trip covers the same numbers twice.
+    check("every warning says how far into THIS leg it happens",
+          "into this leg" in out_leg and "into this leg" in home_leg, out_leg[:150])
+    check("a closure ridden both ways reports a different distance each way",
+          "36 mi into this leg" in out_leg and "22 mi into this leg" in home_leg,
+          f"{out_leg[:110]} || {home_leg[:110]}")
+    # A leg that rides through nothing must say nothing: this is the complaint that started
+    # it -- warnings for stretches of Parkway the route never touches.
+    ride_in = next((c for c in cards if c.startswith("1.")), "")
+    check("a leg with no closure on it carries no closure line",
+          "Closure," not in ride_in, ride_in[:90])
 
     print("\nthe app can say what it is and start over")
     ab = js["about"]
